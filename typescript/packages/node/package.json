@@ -1,7 +1,35 @@
 {
   "name": "@struktoai/mirage-node",
-  "version": "0.0.1-alpha.1",
+  "version": "0.0.1",
+  "description": "A Unified Virtual Filesystem For AI Agents",
+  "keywords": [
+    "bash",
+    "fuse",
+    "typescript",
+    "vfs",
+    "ai-agents",
+    "agent-sandbox",
+    "langchain",
+    "virtual-filesystem",
+    "llm-agents",
+    "agent-tools",
+    "claude-code",
+    "openai-agents"
+  ],
+  "homepage": "https://github.com/strukto-ai/mirage#readme",
+  "bugs": {
+    "url": "https://github.com/strukto-ai/mirage/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/strukto-ai/mirage.git",
+    "directory": "typescript/packages/node"
+  },
   "license": "Apache-2.0",
+  "author": "Zecheng Zhang <zecheng@strukto.ai>",
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -22,51 +50,27 @@
   "dependencies": {
     "@struktoai/mirage-core": "workspace:*",
     "fs-monkey": "^1.1.0",
+    "imapflow": "^1.0.0",
+    "mailparser": "^3.6.0",
+    "mongodb": "^6.10.0",
     "music-metadata": "^11.12.3",
+    "nodemailer": "^8.0.0",
+    "pg": "^8.13.0",
+    "redis": "^5.0.0",
+    "ssh2": "^1.16.0",
     "tree-sitter-bash": "^0.25.1",
+    "wavefile": "^11.0.0",
     "web-tree-sitter": "^0.26.8"
   },
   "peerDependencies": {
     "@zkochan/fuse-native": "^0.1.0",
-    "imapflow": "^1.0.0",
-    "mailparser": "^3.6.0",
-    "mongodb": "^6.10.0",
-    "nodemailer": "^8.0.0",
-    "pg": "^8.13.0",
-    "redis": "^5.0.0",
-    "sherpa-onnx-node": "^1.12.0",
-    "ssh2": "^1.16.0",
-    "wavefile": "^11.0.0"
+    "sherpa-onnx-node": "^1.12.0"
   },
   "peerDependenciesMeta": {
     "@zkochan/fuse-native": {
       "optional": true
     },
-    "imapflow": {
-      "optional": true
-    },
-    "mailparser": {
-      "optional": true
-    },
-    "mongodb": {
-      "optional": true
-    },
-    "nodemailer": {
-      "optional": true
-    },
-    "pg": {
-      "optional": true
-    },
-    "redis": {
-      "optional": true
-    },
     "sherpa-onnx-node": {
-      "optional": true
-    },
-    "ssh2": {
-      "optional": true
-    },
-    "wavefile": {
       "optional": true
     }
   },

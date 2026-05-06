@@ -21,34 +21,32 @@ This installs both the `mirage` library and the `mirage` CLI binary.
 
 ## TypeScript
 
+Pick the package that matches your runtime — `@struktoai/mirage-core` is auto-pulled by both Node and browser entrypoints.
+
 ```bash
-npm install mirage
+npm install @struktoai/mirage-node      # Node.js servers and CLIs
+npm install @struktoai/mirage-browser   # browser / edge runtimes
+npm install @struktoai/mirage-agents    # OpenAI / Vercel AI / LangChain / Mastra adapters
 ```
-
-One package, three entrypoints. Pick the one that matches your runtime:
-
-- `mirage/node`: Node.js servers and CLIs
-- `mirage/browser`: browser / edge runtimes
-- `mirage/core`: runtime-agnostic primitives
 
 ## CLI
 
 ```bash
-curl -fsSL https://strukto.ai/install.sh | sh
+curl -fsSL https://strukto.ai/mirage/install.sh | sh
 ```
 
 Or via your package manager of choice:
 
 ```bash
-brew install mirage
+npm install -g @struktoai/mirage-cli
+```
+
+```bash
+npx @struktoai/mirage-cli
 ```
 
 ```bash
 uvx mirage-ai
-```
-
-```bash
-npx mirage
 ```
 
 ## More Details

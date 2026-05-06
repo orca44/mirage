@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/mirage-og-light@2x.png" alt="Mirage: A Unified Virtual File System for AI Agents" width="900">
+  <img src="https://raw.githubusercontent.com/strukto-ai/mirage/main/assets/mirage-og-light@2x.png" alt="Mirage: A Unified Virtual File System for AI Agents" width="900">
 </p>
 
 <p align="center">
@@ -54,8 +54,8 @@ await ws.execute('cp /s3/report.csv /data/local.csv')
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/mirage-arch-dark.svg">
-    <img src="assets/mirage-arch-light.svg" alt="Mirage architecture: AI Agent and Application → Mirage Bash and VFS → Dispatcher &amp; Cache → Infrastructure and Remote" width="900">
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/strukto-ai/mirage/main/assets/mirage-arch-dark.svg">
+    <img src="https://raw.githubusercontent.com/strukto-ai/mirage/main/assets/mirage-arch-light.svg" alt="Mirage architecture: AI Agent and Application → Mirage Bash and VFS → Dispatcher &amp; Cache → Infrastructure and Remote" width="900">
   </picture>
 </p>
 

@@ -1,13 +1,13 @@
 [project]
 name = "mirage-ai"
-version = "0.0.1a1"
-description = "Eyes and hands are all your agents need. By mounting S3, Google Drive, Slack, Discord, Gmail, Redis, and more as a virtual filesystem, Mirage gives AI agents a unified shell-like interface to read, write, and pipe through. It seems real, but it isn't; it's a mirage. Until you make it real."
+version = "0.0.1"
+description = "A unified virtual filesystem for AI agents. Mount S3, Google Drive, Slack, Gmail, GitHub, Linear, Notion, Postgres, MongoDB, SSH, and more behind one filesystem so agents read, write, and pipe across services with familiar shell commands."
 readme = "README.md"
 license = "Apache-2.0"
-license-files = ["../LICENSE"]
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
 authors = [
-    { name = "Zecheng Zhang", email = "zecheng@alumni.stanford.edu" },
+    { name = "Zecheng Zhang", email = "zecheng@strukto.ai" },
 ]
 keywords = [
     "ai-agents",
@@ -22,7 +22,7 @@ keywords = [
     "rag",
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Operating System :: POSIX :: Linux",
     "Operating System :: MacOS :: MacOS X",
@@ -38,6 +38,7 @@ dependencies = [
     "aiohttp>=3.13.3",
     "fastapi>=0.135.1",
     "httpx>=0.28.1",
+    "python-multipart>=0.0.20",
     "numpy>=2.4.3",
     "orjson>=3.11",
     "pyyaml>=6.0.3",
@@ -49,12 +50,13 @@ dependencies = [
     "pypdfium2>=5.7.0",
     "pillow>=12.2.0",
     "jq>=1.11.0",
+    "mfusepy>=1.0.0",
 ]
 
 [project.urls]
 Homepage = "https://www.strukto.ai/"
 Repository = "https://github.com/strukto-ai/mirage"
-Documentation = "https://github.com/strukto-ai/mirage/tree/main/docs"
+Documentation = "https://docs.mirage.strukto.ai"
 Issues = "https://github.com/strukto-ai/mirage/issues"
 
 [project.scripts]

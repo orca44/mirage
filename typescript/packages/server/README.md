@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/mirage-og-light@2x.png" alt="Mirage: A Unified Virtual File System for AI Agents" width="900">
+  <img src="https://raw.githubusercontent.com/strukto-ai/mirage/main/assets/mirage-og-light@2x.png" alt="Mirage: A Unified Virtual File System for AI Agents" width="900">
 </p>
 
 <p align="center">
@@ -19,8 +19,8 @@
     <br/>
     <a href="https://docs.mirage.strukto.ai/typescript/quickstart" alt="TypeScript docs">
         <img src="https://img.shields.io/badge/typescript-docs-0C0C0C?labelColor=FAFAFA&logo=typescript&logoColor=0C0C0C" alt="TypeScript docs"></a>
-    <a href="https://www.npmjs.com/package/@struktoai/mirage-node" alt="NPM Version">
-        <img src="https://img.shields.io/npm/v/@struktoai/mirage-node.svg?color=0C0C0C&labelColor=FAFAFA"/></a>
+    <a href="https://www.npmjs.com/package/@struktoai/mirage-server" alt="NPM Version">
+        <img src="https://img.shields.io/npm/v/%40struktoai%2Fmirage-server.svg?color=0C0C0C&labelColor=FAFAFA"/></a>
 </p>
 
 Mirage is **a Unified Virtual File System for AI Agents**: a single tree that mounts services and data sources like S3, Google Drive, Slack, Gmail, and Redis side-by-side as one filesystem.
@@ -29,9 +29,9 @@ AI agents reach every backend with the same handful of Unix-like tools, and pipe
 
 ```ts
 const ws = new Workspace({
-  '/data':   new RAMResource(),
-  '/s3':     new S3Resource({ bucket: 'logs' }),
-  '/slack':  new SlackResource({}),
+  '/data': new RAMResource(),
+  '/s3': new S3Resource({ bucket: 'logs' }),
+  '/slack': new SlackResource({}),
   '/github': new GitHubResource({}),
 })
 
@@ -54,8 +54,8 @@ await ws.execute('cp /s3/report.csv /data/local.csv')
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/mirage-arch-dark.svg">
-    <img src="assets/mirage-arch-light.svg" alt="Mirage architecture: AI Agent and Application → Mirage Bash and VFS → Dispatcher &amp; Cache → Infrastructure and Remote" width="900">
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/strukto-ai/mirage/main/assets/mirage-arch-dark.svg">
+    <img src="https://raw.githubusercontent.com/strukto-ai/mirage/main/assets/mirage-arch-light.svg" alt="Mirage architecture: AI Agent and Application → Mirage Bash and VFS → Dispatcher &amp; Cache → Infrastructure and Remote" width="900">
   </picture>
 </p>
 
@@ -141,10 +141,10 @@ import {
 } from '@struktoai/mirage-browser'
 
 const ws = new Workspace({
-  '/data':  new RAMResource(),
-  '/s3':    new S3Resource({ bucket: 'my-bucket' }),
+  '/data': new RAMResource(),
+  '/s3': new S3Resource({ bucket: 'my-bucket' }),
   '/slack': new SlackResource({}),
-  '/docs':  new GDocsResource({}),
+  '/docs': new GDocsResource({}),
 })
 
 await ws.execute('cp /s3/report.csv /data/report.csv')
