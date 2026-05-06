@@ -38,6 +38,16 @@ const ws = new Workspace({
 await ws.execute('grep alert /slack/general/*.json | wc -l')
 await ws.execute('cat /github/mirage/README.md')
 await ws.execute('cp /s3/report.csv /data/local.csv')
+
+// Register a new command, available across every mount.
+ws.command('summarize', ...)
+
+// Override a command for a specific resource + filetype —
+// `cat` on a Parquet file in /s3 renders rows as JSON instead of raw bytes.
+ws.command('cat', { resource: 's3', filetype: 'parquet' }, ...)
+
+await ws.execute('summarize /github/mirage/README.md')
+await ws.execute('cat /s3/events/2026-05-06.parquet | jq .user')
 ```
 
 ## About
