@@ -1,0 +1,40 @@
+{
+  "name": "@struktoai/mirage-server",
+  "version": "0.0.1-alpha.1",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json",
+    "./bin/daemon": "./dist/bin/daemon.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "bin": {
+    "mirage-daemon": "./dist/bin/daemon.js"
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@struktoai/mirage-core": "workspace:*",
+    "@struktoai/mirage-node": "workspace:*",
+    "fastify": "^5.8.5",
+    "@fastify/multipart": "^10.0.0",
+    "yaml": "^2.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsup": "^8.5.0",
+    "typescript": "^6.0.0",
+    "vitest": "^3.0.0"
+  }
+}

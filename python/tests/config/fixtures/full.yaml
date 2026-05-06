@@ -1,0 +1,24 @@
+mode: WRITE
+consistency: LAZY
+default_session_id: default
+default_agent_id: default
+fuse: false
+native: false
+history: 50
+
+cache:
+  type: ram
+  limit: 256MB
+
+mounts:
+  /:
+    resource: ram
+    mode: WRITE
+  /s3:
+    resource: s3
+    mode: READ
+    config:
+      bucket: ${TEST_BUCKET}
+      region: us-east-1
+      aws_access_key_id: ${TEST_AWS_KEY}
+      aws_secret_access_key: ${TEST_AWS_SECRET}

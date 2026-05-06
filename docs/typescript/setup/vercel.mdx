@@ -1,0 +1,54 @@
+---
+title: Vercel
+icon: triangle
+description: Mount Vercel projects, deployments, and logs as a Mirage filesystem.
+---
+
+`VercelResource` exposes a Vercel account or team as a read-only tree of projects, deployments, and recent build logs.
+
+## Node
+
+```bash
+pnpm add @struktoai/mirage-node
+```
+
+```ts
+import { MountMode, VercelResource, Workspace } from '@struktoai/mirage-node'
+
+const vercel = new VercelResource({
+  token: process.env.VERCEL_TOKEN,
+  teamId: process.env.VERCEL_TEAM_ID,
+})
+
+const ws = new Workspace({ '/vercel': vercel }, { mode: MountMode.READ })
+await ws.execute('ls /vercel/projects/')
+```
+
+## Browser
+
+```bash
+pnpm add @struktoai/mirage-browser
+```
+
+The browser variant routes through an HTTP driver so the token never reaches the page directly:
+
+```ts
+import { MountMode, VercelResource, Workspace } from '@struktoai/mirage-browser'
+
+const vercel = new VercelResource({
+  baseUrl: '/api/vercel-proxy',
+})
+```
+
+## Config
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `token` | none | Vercel API token. Redacted in snapshots. |
+| `teamId` | none | Restrict to a specific team. |
+| `baseUrl` | `https://api.vercel.com` | Override for proxies. |
+| `defaultListLimit` | `100` | Default page size. |
+
+## Mount mode
+
+`read`.

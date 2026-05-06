@@ -1,0 +1,71 @@
+---
+title: Vercel AI SDK
+description: Wire mirage tools into the Vercel AI SDK via the @struktoai/mirage-agents/vercel adapter.
+icon: triangle
+---
+
+The [Vercel AI SDK](https://sdk.vercel.ai) (`ai`) drives tool-calling agents around any provider in its registry. Mirage ships a tool factory that exposes a `Workspace` as five typed tools (`execute`, `readFile`, `writeFile`, `editFile`, `ls`) for `generateText` / `streamText` / agent loops.
+
+## Install
+
+`@struktoai/mirage-agents/vercel` is runtime-agnostic. Pair it with `@struktoai/mirage-node` for Node or `@struktoai/mirage-browser` for the browser.
+
+<CodeGroup>
+```bash Node
+pnpm add @struktoai/mirage-agents @struktoai/mirage-node ai @ai-sdk/openai
+```
+```bash Browser
+pnpm add @struktoai/mirage-agents @struktoai/mirage-browser ai @ai-sdk/openai
+```
+</CodeGroup>
+
+## Usage
+
+```ts
+import { MountMode, OpsRegistry, RAMResource, Workspace } from '@struktoai/mirage-node'
+import { generateText, stepCountIs } from 'ai'
+import { openai } from '@ai-sdk/openai'
+import { mirageTools } from '@struktoai/mirage-agents/vercel'
+import { buildSystemPrompt } from '@struktoai/mirage-agents/openai'
+
+const ram = new RAMResource()
+const ops = new OpsRegistry()
+for (const op of ram.ops()) ops.register(op)
+const ws = new Workspace({ '/': ram }, { mode: MountMode.WRITE, ops })
+
+const { text } = await generateText({
+  model: openai('gpt-5.4-mini'),
+  system: buildSystemPrompt({
+    mountInfo: { '/': 'In-memory filesystem (read/write)' },
+  }),
+  prompt:
+    "Create /hello.txt with 'hi from mirage' and /data/numbers.csv with 3 sample rows. " +
+    'Then list and read every file back.',
+  tools: mirageTools(ws),
+  stopWhen: stepCountIs(20),
+})
+
+console.log(text)
+```
+
+## Exports
+
+| Symbol | Purpose |
+| --- | --- |
+| `mirageTools(ws)` | Returns `{ execute, readFile, writeFile, editFile, ls }`, each a `tool()` from `ai` ready to spread into `tools: { ... }`. |
+
+### Tool reference
+
+| Tool | Input | Output |
+| --- | --- | --- |
+| `execute` | `{ command: string }` | `{ stdout, stderr, exitCode }` |
+| `readFile` | `{ path: string }` | `{ content }` or `{ error }` |
+| `writeFile` | `{ path, content }` | `{ path }` (auto-mkdirs parent) |
+| `editFile` | `{ path, oldString, newString, replaceAll? }` | `{ path, occurrences }` or `{ error }` |
+| `ls` | `{ path: string }` | `{ files: { path, is_dir }[] }` or `{ error }` |
+
+`writeFile` always succeeds for new paths and overwrites existing ones; if you want create-only semantics (error when the file exists), wrap it yourself.
+
+## Examples
+
+- [`examples/typescript/agents/vercel/ram_vercel.ts`](https://github.com/strukto-ai/mirage/blob/main/examples/typescript/agents/vercel/ram_vercel.ts), RAM-only sandbox driven by `gpt-5.4-mini`.

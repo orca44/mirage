@@ -1,0 +1,568 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "$id": "https://strukto.ai/schema/vfp-0.1.json",
+  "title": "VFP / Virtual Filesystem Protocol",
+  "description": "VFP/0.1 is a small protocol for exposing services and data sources as a unified virtual filesystem for coding agents. Methods are POSIX-shaped; the contract is machine-readable types plus capability declarations. Wire format is unspecified at v0.1; in-process Python and TypeScript SDKs are the reference implementations. This file is a hand-written sample of the schema shape; the canonical artifact will be codegenned from the in-tree Pydantic models when VFP is extracted to its own repo.",
+
+  "$defs": {
+
+    "ProtocolVersion": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "VFP protocol major version. Currently 1 (= VFP/0.1)."
+    },
+
+    "FileType": {
+      "type": "string",
+      "description": "File type returned by stat. Core values are normative; backends MAY use custom values prefixed `x-<vendor>:`. Clients MUST NOT error on unknown values; they SHOULD treat unknown values as `binary`.",
+      "examples": [
+        "directory", "text", "binary", "json", "csv", "markdown",
+        "image/png", "image/jpeg", "image/gif",
+        "application/pdf", "application/zip", "application/gzip",
+        "application/vnd.google-apps.document",
+        "parquet", "orc", "feather", "hdf5",
+        "x-mirage:slack-message"
+      ]
+    },
+
+    "ErrorCode": {
+      "type": "string",
+      "enum": [
+        "NotFound", "Denied", "Conflict",
+        "IsADirectory", "NotADirectory",
+        "UnsupportedFileType", "InvalidPath",
+        "NotImplemented", "RateLimited", "Network"
+      ],
+      "description": "Named error conditions VFP implementations signal. Wire-mode implementations map these to JSON-RPC error codes; in-process implementations raise the host language's native error type."
+    },
+
+    "MountType": {
+      "type": "string",
+      "description": "Soft hint about a mount's nature. Clients SHOULD NOT switch on this for behavior; it is informational.",
+      "examples": [
+        "filesystem", "object-store", "messaging", "email",
+        "documents", "issue-tracker", "database", "cache", "observability"
+      ]
+    },
+
+    "Implementation": {
+      "type": "object",
+      "description": "Metadata about a VFP implementation (server or client).",
+      "properties": {
+        "name":     { "type": "string", "description": "Implementation name (e.g., `mirage`)." },
+        "language": { "type": "string", "description": "Implementation language (e.g., `python`, `typescript`)." },
+        "version":  { "type": "string", "description": "Implementation version." },
+        "_meta":    { "type": ["object", "null"], "additionalProperties": true }
+      },
+      "required": ["name", "language", "version"]
+    },
+
+    "Entry": {
+      "type": "object",
+      "description": "A directory entry returned by `fs/readdir`.",
+      "properties": {
+        "name":     { "type": "string", "description": "Basename of the entry (no path separators)." },
+        "type":     { "$ref": "#/$defs/FileType" },
+        "size":     { "type": ["integer", "null"], "minimum": 0 },
+        "modified": { "type": ["string", "null"], "format": "date-time" },
+        "_meta":    { "type": ["object", "null"], "additionalProperties": true }
+      },
+      "required": ["name", "type"]
+    },
+
+    "FileStat": {
+      "type": "object",
+      "description": "File metadata returned by `fs/stat`.",
+      "properties": {
+        "name":        { "type": "string" },
+        "type":        { "$ref": "#/$defs/FileType" },
+        "size":        { "type": ["integer", "null"], "minimum": 0 },
+        "modified":    { "type": ["string", "null"], "format": "date-time" },
+        "fingerprint": {
+          "type": ["string", "null"],
+          "description": "Opaque change-token. MUST change iff content changes. MAY be an etag, hash, or version identifier. Null indicates always-fresh."
+        },
+        "extra": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Backend-specific fields (e.g., S3 etag, GitHub sha)."
+        },
+        "_meta": { "type": ["object", "null"], "additionalProperties": true }
+      },
+      "required": ["name", "type"]
+    },
+
+    "Mount": {
+      "type": "object",
+      "description": "A mount in a workspace.",
+      "properties": {
+        "path":      {
+          "type": "string",
+          "description": "Absolute mount path. MUST start with `/`. MUST be unique within a workspace.",
+          "pattern": "^/"
+        },
+        "type":      { "$ref": "#/$defs/MountType" },
+        "writable":  { "type": "boolean", "default": false },
+        "filetypes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/FileType" },
+          "description": "Filetypes the mount advertises. Aggregated from the mount's per-method filetype filters."
+        },
+        "_meta":     { "type": ["object", "null"], "additionalProperties": true }
+      },
+      "required": ["path", "type"]
+    },
+
+    "FileTypeFilter": {
+      "type": "object",
+      "description": "Restricts an op or command to a specific set of filetypes.",
+      "properties": {
+        "filetypes": { "type": "array", "items": { "$ref": "#/$defs/FileType" } }
+      },
+      "required": ["filetypes"]
+    },
+
+    "PosixOpSupport": {
+      "oneOf": [
+        { "type": "boolean", "description": "If true, op supports any filetype. If false, op is unsupported." },
+        { "$ref": "#/$defs/FileTypeFilter" }
+      ],
+      "description": "Per-op support, optionally filtered by filetype."
+    },
+
+    "FlagFilter": {
+      "type": "object",
+      "description": "Modifier on a command's standard flag set.",
+      "properties": {
+        "exclude": { "type": "array", "items": { "type": "string" }, "description": "Standard flags this implementation does not support." },
+        "include": { "type": "array", "items": { "type": "string" }, "description": "Non-standard flags this implementation accepts." },
+        "only":    { "type": "array", "items": { "type": "string" }, "description": "Explicit flag set; if present, overrides standard." }
+      }
+    },
+
+    "CommandCapability": {
+      "type": "object",
+      "description": "Per-command support refinement.",
+      "properties": {
+        "filetypes": { "type": "array", "items": { "$ref": "#/$defs/FileType" } },
+        "flags":     { "$ref": "#/$defs/FlagFilter" }
+      }
+    },
+
+    "CommandSupport": {
+      "oneOf": [
+        { "type": "boolean", "description": "If true, command works on any filetype with all standard flags. If false, command is unsupported." },
+        { "$ref": "#/$defs/CommandCapability" }
+      ]
+    },
+
+    "PosixCapabilities": {
+      "type": "object",
+      "description": "POSIX-shaped operations the server supports.",
+      "properties": {
+        "read":    { "$ref": "#/$defs/PosixOpSupport", "default": false },
+        "readdir": { "type": "boolean", "default": false },
+        "stat":    { "type": "boolean", "default": false },
+        "write":   { "$ref": "#/$defs/PosixOpSupport", "default": false },
+        "unlink":  { "type": "boolean", "default": false },
+        "mkdir":   { "type": "boolean", "default": false },
+        "rmdir":   { "type": "boolean", "default": false },
+        "rename":  { "type": "boolean", "default": false },
+        "glob":    { "type": "boolean", "default": false }
+      }
+    },
+
+    "CommandCapabilities": {
+      "type": "object",
+      "description": "Standard Unix commands the server supports. Vendor extensions use keys prefixed `x-<vendor>:`.",
+      "properties": {
+        "ls":   { "$ref": "#/$defs/CommandSupport", "default": false },
+        "cat":  { "$ref": "#/$defs/CommandSupport", "default": false },
+        "head": { "$ref": "#/$defs/CommandSupport", "default": false },
+        "tail": { "$ref": "#/$defs/CommandSupport", "default": false },
+        "wc":   { "$ref": "#/$defs/CommandSupport", "default": false },
+        "grep": { "$ref": "#/$defs/CommandSupport", "default": false },
+        "find": { "$ref": "#/$defs/CommandSupport", "default": false },
+        "jq":   { "$ref": "#/$defs/CommandSupport", "default": false },
+        "sed":  { "$ref": "#/$defs/CommandSupport", "default": false },
+        "cp":   { "$ref": "#/$defs/CommandSupport", "default": false },
+        "mv":   { "$ref": "#/$defs/CommandSupport", "default": false }
+      },
+      "additionalProperties": { "$ref": "#/$defs/CommandSupport" }
+    },
+
+    "WorkspaceCapabilities": {
+      "type": "object",
+      "description": "Workspace lifecycle methods the server supports.",
+      "properties": {
+        "snapshot": { "type": "boolean", "default": false },
+        "load":     { "type": "boolean", "default": false },
+        "list":     { "type": "boolean", "default": false },
+        "delete":   { "type": "boolean", "default": false },
+        "info":     { "type": "boolean", "default": false }
+      }
+    },
+
+    "ServerCapabilities": {
+      "type": "object",
+      "description": "Aggregate capability declaration returned by a VFP server in `initialize`.",
+      "properties": {
+        "posix":     { "$ref": "#/$defs/PosixCapabilities" },
+        "commands":  { "$ref": "#/$defs/CommandCapabilities" },
+        "workspace": { "$ref": "#/$defs/WorkspaceCapabilities" },
+        "mounts":    { "type": "array", "items": { "$ref": "#/$defs/Mount" } },
+        "_meta":     { "type": ["object", "null"], "additionalProperties": true }
+      }
+    },
+
+    "CapabilityDeclaration": {
+      "type": "object",
+      "description": "Top-level capability artifact: protocol version, implementation info, supported features.",
+      "properties": {
+        "protocol_version": { "$ref": "#/$defs/ProtocolVersion" },
+        "implementation":   { "$ref": "#/$defs/Implementation" },
+        "capabilities":     { "$ref": "#/$defs/ServerCapabilities" }
+      },
+      "required": ["protocol_version", "implementation", "capabilities"]
+    },
+
+    "SnapshotInfo": {
+      "type": "object",
+      "description": "Metadata about a workspace snapshot.",
+      "properties": {
+        "id":          { "type": "string", "description": "Opaque snapshot identifier." },
+        "name":        { "type": ["string", "null"] },
+        "description": { "type": ["string", "null"] },
+        "parent_id":   { "type": ["string", "null"], "description": "Snapshot this one was based on. Free lineage without explicit branch ops." },
+        "created":     { "type": "string", "format": "date-time" },
+        "size":        { "type": ["integer", "null"], "minimum": 0 },
+        "_meta":       { "type": ["object", "null"], "additionalProperties": true }
+      },
+      "required": ["id", "created"]
+    },
+
+    "InitializeRequest": {
+      "type": "object",
+      "properties": {
+        "protocol_version": { "$ref": "#/$defs/ProtocolVersion" },
+        "client_info":      { "$ref": "#/$defs/Implementation" },
+        "_meta":            { "type": ["object", "null"], "additionalProperties": true }
+      },
+      "required": ["protocol_version"],
+      "x-method": "initialize",
+      "x-side":   "server"
+    },
+    "InitializeResponse": {
+      "type": "object",
+      "properties": {
+        "protocol_version": { "$ref": "#/$defs/ProtocolVersion" },
+        "server_info":      { "$ref": "#/$defs/Implementation" },
+        "capabilities":     { "$ref": "#/$defs/CapabilityDeclaration" },
+        "_meta":            { "type": ["object", "null"], "additionalProperties": true }
+      },
+      "required": ["protocol_version", "server_info", "capabilities"],
+      "x-method": "initialize",
+      "x-side":   "server"
+    },
+
+    "FsReadRequest": {
+      "type": "object",
+      "properties": {
+        "path":  { "type": "string", "description": "Absolute path." },
+        "_meta": { "type": ["object", "null"], "additionalProperties": true }
+      },
+      "required": ["path"],
+      "x-method": "fs/read",
+      "x-side":   "server"
+    },
+    "FsReadResponse": {
+      "type": "object",
+      "properties": {
+        "bytes": { "type": "string", "format": "byte", "description": "Base64-encoded file bytes when on the wire; raw bytes in-process." },
+        "_meta": { "type": ["object", "null"], "additionalProperties": true }
+      },
+      "required": ["bytes"],
+      "x-method": "fs/read",
+      "x-side":   "server"
+    },
+
+    "FsReaddirRequest": {
+      "type": "object",
+      "properties": {
+        "path":  { "type": "string" },
+        "_meta": { "type": ["object", "null"], "additionalProperties": true }
+      },
+      "required": ["path"],
+      "x-method": "fs/readdir",
+      "x-side":   "server"
+    },
+    "FsReaddirResponse": {
+      "type": "object",
+      "properties": {
+        "entries": { "type": "array", "items": { "$ref": "#/$defs/Entry" } },
+        "_meta":   { "type": ["object", "null"], "additionalProperties": true }
+      },
+      "required": ["entries"],
+      "x-method": "fs/readdir",
+      "x-side":   "server"
+    },
+
+    "FsStatRequest": {
+      "type": "object",
+      "properties": {
+        "path":  { "type": "string" },
+        "_meta": { "type": ["object", "null"], "additionalProperties": true }
+      },
+      "required": ["path"],
+      "x-method": "fs/stat",
+      "x-side":   "server"
+    },
+    "FsStatResponse": {
+      "type": "object",
+      "properties": {
+        "stat":  { "$ref": "#/$defs/FileStat" },
+        "_meta": { "type": ["object", "null"], "additionalProperties": true }
+      },
+      "required": ["stat"],
+      "x-method": "fs/stat",
+      "x-side":   "server"
+    },
+
+    "FsWriteRequest": {
+      "type": "object",
+      "properties": {
+        "path":  { "type": "string" },
+        "bytes": { "type": "string", "format": "byte" },
+        "_meta": { "type": ["object", "null"], "additionalProperties": true }
+      },
+      "required": ["path", "bytes"],
+      "x-method": "fs/write",
+      "x-side":   "server"
+    },
+    "FsWriteResponse": {
+      "type": "object",
+      "properties": { "_meta": { "type": ["object", "null"], "additionalProperties": true } },
+      "x-method": "fs/write",
+      "x-side":   "server"
+    },
+
+    "FsUnlinkRequest": {
+      "type": "object",
+      "properties": {
+        "path":  { "type": "string" },
+        "_meta": { "type": ["object", "null"], "additionalProperties": true }
+      },
+      "required": ["path"],
+      "x-method": "fs/unlink",
+      "x-side":   "server"
+    },
+    "FsUnlinkResponse": {
+      "type": "object",
+      "properties": { "_meta": { "type": ["object", "null"], "additionalProperties": true } },
+      "x-method": "fs/unlink",
+      "x-side":   "server"
+    },
+
+    "FsMkdirRequest": {
+      "type": "object",
+      "properties": {
+        "path":  { "type": "string" },
+        "_meta": { "type": ["object", "null"], "additionalProperties": true }
+      },
+      "required": ["path"],
+      "x-method": "fs/mkdir",
+      "x-side":   "server"
+    },
+    "FsMkdirResponse": {
+      "type": "object",
+      "properties": { "_meta": { "type": ["object", "null"], "additionalProperties": true } },
+      "x-method": "fs/mkdir",
+      "x-side":   "server"
+    },
+
+    "FsRmdirRequest": {
+      "type": "object",
+      "properties": {
+        "path":  { "type": "string" },
+        "_meta": { "type": ["object", "null"], "additionalProperties": true }
+      },
+      "required": ["path"],
+      "x-method": "fs/rmdir",
+      "x-side":   "server"
+    },
+    "FsRmdirResponse": {
+      "type": "object",
+      "properties": { "_meta": { "type": ["object", "null"], "additionalProperties": true } },
+      "x-method": "fs/rmdir",
+      "x-side":   "server"
+    },
+
+    "FsRenameRequest": {
+      "type": "object",
+      "properties": {
+        "src":   { "type": "string" },
+        "dst":   { "type": "string" },
+        "_meta": { "type": ["object", "null"], "additionalProperties": true }
+      },
+      "required": ["src", "dst"],
+      "x-method": "fs/rename",
+      "x-side":   "server"
+    },
+    "FsRenameResponse": {
+      "type": "object",
+      "properties": { "_meta": { "type": ["object", "null"], "additionalProperties": true } },
+      "x-method": "fs/rename",
+      "x-side":   "server"
+    },
+
+    "FsGlobRequest": {
+      "type": "object",
+      "properties": {
+        "pattern": { "type": "string", "description": "POSIX-glob subset: `*`, `?`, `[abc]`, `[!abc]`, `**`." },
+        "_meta":   { "type": ["object", "null"], "additionalProperties": true }
+      },
+      "required": ["pattern"],
+      "x-method": "fs/glob",
+      "x-side":   "server"
+    },
+    "FsGlobResponse": {
+      "type": "object",
+      "properties": {
+        "paths": { "type": "array", "items": { "type": "string" } },
+        "_meta": { "type": ["object", "null"], "additionalProperties": true }
+      },
+      "required": ["paths"],
+      "x-method": "fs/glob",
+      "x-side":   "server"
+    },
+
+    "CommandExecRequest": {
+      "type": "object",
+      "properties": {
+        "name":  { "type": "string", "description": "Command name (e.g., `grep`, `jq`)." },
+        "argv":  { "type": "array", "items": { "type": "string" }, "default": [] },
+        "stdin": { "type": ["string", "null"], "format": "byte" },
+        "cwd":   { "type": ["string", "null"] },
+        "_meta": { "type": ["object", "null"], "additionalProperties": true }
+      },
+      "required": ["name"],
+      "x-method": "command/exec",
+      "x-side":   "server"
+    },
+    "CommandExecResponse": {
+      "type": "object",
+      "properties": {
+        "stdout":    { "type": "string", "format": "byte" },
+        "stderr":    { "type": "string", "format": "byte" },
+        "exit_code": { "type": "integer" },
+        "_meta":     { "type": ["object", "null"], "additionalProperties": true }
+      },
+      "required": ["stdout", "stderr", "exit_code"],
+      "x-method": "command/exec",
+      "x-side":   "server"
+    },
+
+    "WorkspaceSnapshotRequest": {
+      "type": "object",
+      "properties": {
+        "name":        { "type": ["string", "null"] },
+        "description": { "type": ["string", "null"] },
+        "_meta":       { "type": ["object", "null"], "additionalProperties": true }
+      },
+      "x-method": "workspace/snapshot",
+      "x-side":   "server"
+    },
+    "WorkspaceSnapshotResponse": {
+      "type": "object",
+      "properties": {
+        "snapshot": { "$ref": "#/$defs/SnapshotInfo" },
+        "_meta":    { "type": ["object", "null"], "additionalProperties": true }
+      },
+      "required": ["snapshot"],
+      "x-method": "workspace/snapshot",
+      "x-side":   "server"
+    },
+
+    "WorkspaceLoadRequest": {
+      "type": "object",
+      "properties": {
+        "id":    { "type": "string" },
+        "_meta": { "type": ["object", "null"], "additionalProperties": true }
+      },
+      "required": ["id"],
+      "x-method": "workspace/load",
+      "x-side":   "server"
+    },
+    "WorkspaceLoadResponse": {
+      "type": "object",
+      "properties": {
+        "snapshot": { "$ref": "#/$defs/SnapshotInfo" },
+        "_meta":    { "type": ["object", "null"], "additionalProperties": true }
+      },
+      "required": ["snapshot"],
+      "x-method": "workspace/load",
+      "x-side":   "server"
+    },
+
+    "WorkspaceListRequest": {
+      "type": "object",
+      "properties": {
+        "limit":  { "type": ["integer", "null"], "minimum": 1 },
+        "offset": { "type": "integer", "minimum": 0, "default": 0 },
+        "_meta":  { "type": ["object", "null"], "additionalProperties": true }
+      },
+      "x-method": "workspace/list",
+      "x-side":   "server"
+    },
+    "WorkspaceListResponse": {
+      "type": "object",
+      "properties": {
+        "snapshots": { "type": "array", "items": { "$ref": "#/$defs/SnapshotInfo" } },
+        "_meta":     { "type": ["object", "null"], "additionalProperties": true }
+      },
+      "required": ["snapshots"],
+      "x-method": "workspace/list",
+      "x-side":   "server"
+    },
+
+    "WorkspaceDeleteRequest": {
+      "type": "object",
+      "properties": {
+        "id":    { "type": "string" },
+        "_meta": { "type": ["object", "null"], "additionalProperties": true }
+      },
+      "required": ["id"],
+      "x-method": "workspace/delete",
+      "x-side":   "server"
+    },
+    "WorkspaceDeleteResponse": {
+      "type": "object",
+      "properties": {
+        "deleted": { "type": "boolean" },
+        "_meta":   { "type": ["object", "null"], "additionalProperties": true }
+      },
+      "required": ["deleted"],
+      "x-method": "workspace/delete",
+      "x-side":   "server"
+    },
+
+    "WorkspaceInfoRequest": {
+      "type": "object",
+      "properties": { "_meta": { "type": ["object", "null"], "additionalProperties": true } },
+      "x-method": "workspace/info",
+      "x-side":   "server"
+    },
+    "WorkspaceInfoResponse": {
+      "type": "object",
+      "properties": {
+        "workspace_id":        { "type": "string" },
+        "current_snapshot_id": { "type": ["string", "null"] },
+        "capabilities":        { "$ref": "#/$defs/CapabilityDeclaration" },
+        "_meta":               { "type": ["object", "null"], "additionalProperties": true }
+      },
+      "required": ["workspace_id", "capabilities"],
+      "x-method": "workspace/info",
+      "x-side":   "server"
+    }
+  }
+}

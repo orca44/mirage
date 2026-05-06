@@ -1,0 +1,87 @@
+---
+title: FUSE
+icon: hard-drive
+description: Set up FUSE support for MIRAGE with the TypeScript SDK.
+---
+
+## Prerequisites
+
+- Node.js 20+
+- [pnpm](https://pnpm.io/) (recommended, `npm` and `yarn` also work, but the FUSE binding's install script needs extra configuration with pnpm).
+
+## System FUSE
+
+Install the OS-level FUSE kernel support first:
+
+- [macOS FUSE Setup](/home/setup/macos), macFUSE + kernel extension + Apple Silicon recovery mode steps.
+- [Linux FUSE Setup](/home/setup/linux), `fuse3` install and `/etc/fuse.conf`.
+
+## Install the Node Binding
+
+The Node package (`@struktoai/mirage-node`) ships FUSE support via an **optional peer dependency** on [`@zkochan/fuse-native`](https://www.npmjs.com/package/@zkochan/fuse-native), the pnpm author's actively-maintained fork that works on Node 20+ and supports both macOS and Linux (thanks to [@zkochan](https://github.com/fuse-friends/fuse-native/issues/36#issuecomment-3089754579)).
+
+```bash
+pnpm add @struktoai/mirage-node @zkochan/fuse-native
+```
+
+<Tip>
+  Non-FUSE users don't need `@zkochan/fuse-native`, the base `@struktoai/mirage-node` package works without it. Only install the binding when you want a real mountpoint.
+</Tip>
+
+### Allow pnpm to run the install script
+
+`@zkochan/fuse-native` compiles native code on install. pnpm blocks install scripts by default, allow this one explicitly in `pnpm-workspace.yaml`:
+
+```yaml
+onlyBuiltDependencies:
+  - '@zkochan/fuse-native'
+```
+
+Or, if you're not using a pnpm workspace, in `package.json`:
+
+```json
+{
+  "pnpm": {
+    "onlyBuiltDependencies": ["@zkochan/fuse-native"]
+  }
+}
+```
+
+## macOS 4+ Symlink Workaround
+
+<Tabs>
+  <Tab title="macOS">
+    macFUSE 4 ships `libfuse.2.dylib` instead of the legacy `libosxfuse.2.dylib` that `@zkochan/fuse-native` was built against. Create a one-time symlink:
+
+    ```bash
+    sudo ln -sf /usr/local/lib/libfuse.2.dylib /usr/local/lib/libosxfuse.2.dylib
+    pnpm rebuild @zkochan/fuse-native
+    ```
+  </Tab>
+  <Tab title="Linux">
+    No workaround needed on Linux, `@zkochan/fuse-native` links against `libfuse3` directly.
+  </Tab>
+</Tabs>
+
+## Verify
+
+```ts
+import { MountMode, RAMResource, Workspace } from '@struktoai/mirage-node'
+
+const ws = new Workspace(
+  { '/data/': new RAMResource() },
+  { mode: MountMode.WRITE, fuse: true },
+)
+
+await ws.execute('echo hello | tee /data/x.txt')
+console.log('mountpoint:', ws.fuseMountpoint)
+
+// Any tool (ls, cat, external subprocess) can now see /data/x.txt under the mountpoint.
+await ws.close() // auto-unmounts
+```
+
+If `ws.fuseMountpoint` prints a `/tmp/mirage-fuse-XXXXXX` path and no error is thrown, the binding is wired up correctly.
+
+<Note>
+  FUSE on Node has two important runtime constraints, a same-process deadlock when `nativeExec` runs against a mount the current process owns, and that `fs-monkey` can't patch ESM `node:fs` imports. See [TypeScript Limitations](/typescript/limitations) for details and workarounds.
+</Note>

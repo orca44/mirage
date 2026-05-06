@@ -1,0 +1,36 @@
+---
+title: Workspace is Arm
+description: Why Mirage treats workspace, mounts, sessions, and shell as one shared Arm that reaches from the agent to external systems.
+icon: user
+---
+
+## The Arm Reaches
+
+<Icon icon="eye" /> **[Eyes](/home/design/eyes)** see. <Icon icon="hand" /> **[Hands](/home/design/hands)** act. The **Arm** is how the agent reaches between them.
+
+Mirage is that Arm. It extends the agent's reach from the Brain into the external world, carries gestures out to mounted systems, and brings bytes back. Workspace, mounts, sessions, and shell are the Arm's mechanics: the muscles and joints that make reach possible.
+
+Arm is a more honest metaphor than "body" would be. Mirage is not the whole agent. It is the single connected limb that extends the agent into files, object stores, APIs, and remote services.
+
+## What Lives In The Arm
+
+- **[Workspace](/home/design/workspace)**: the shared kernel. It owns mounts, cache, command registry, jobs, and execution history. The part of the Arm that coordinates every motion.
+- **[Mounts](/home/design/mount)**: the attachment points for Eyes. They bind resources to prefixes such as `/s3` or `/github`. Each mount is a new region of the world the Arm can reach into.
+- **[Sessions](/home/design/session)**: the per-terminal execution context. They hold cwd, env, functions, and exit state across commands. One Arm can hold different postures for different agents at once.
+- **[Shell](/home/design/pipeline)**: the wiring inside the Arm. It parses commands, expands paths and variables, and coordinates Hands against what the Eyes expose.
+
+## Arm Versus Workspace
+
+In Mirage's API, `Workspace` is still the concrete object you instantiate. That has not changed.
+
+`Arm` is the higher-level design metaphor. It explains how `Workspace`, mounts, sessions, and shell fit together into one operating environment: one continuous reach from the Brain to the world.
+
+If Eyes are perception and Hands are action, the Arm is the connected, coordinated thing between them.
+
+## Why Arm, Not Body
+
+Earlier drafts called this the *Body*. Body claimed too much when it covered Workspace, mounts, sessions, and shell. Those are reach, not whole-self. Mirage does not contain the whole agent: the Brain (reasoning), higher-level Skills, and the agent harness all live outside Mirage.
+
+Arm is honest about scope. Mirage is one limb, the limb that reaches. The framing even makes [Handshakes](/home/design/handshakes) click: two resources meeting across a gesture is literally two Arms reaching, two Hands clasping.
+
+The runtime piece is described in [Architecture](/home/architecture#workspace-and-observability): the async event loop the Arm operates inside. The Arm is the limb; the runtime is the substrate it moves bytes through.

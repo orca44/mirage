@@ -1,0 +1,111 @@
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
+import fnmatch
+
+import asyncssh
+
+from mirage.accessor.ssh import SSHAccessor
+from mirage.core.ssh._client import _abs
+from mirage.types import PathSpec
+
+
+async def find(
+    accessor: SSHAccessor,
+    path: PathSpec,
+    name: str | None = None,
+    type: str | None = None,
+    min_size: int | None = None,
+    max_size: int | None = None,
+    maxdepth: int | None = None,
+    name_exclude: str | None = None,
+    or_names: list[str] | None = None,
+    mtime_min: float | None = None,
+    mtime_max: float | None = None,
+    iname: str | None = None,
+    mindepth: int | None = None,
+    path_pattern: str | None = None,
+) -> list[str]:
+    if isinstance(path, str):
+        path = PathSpec(original=path, directory=path)
+    if isinstance(path, PathSpec):
+        path = path.strip_prefix
+    config = accessor.config
+    sftp = await accessor.sftp()
+    results: list[str] = []
+    await _walk(sftp, config, path, results, 0, maxdepth, mindepth, name,
+                iname, type, min_size, max_size, name_exclude, or_names,
+                mtime_min, mtime_max, path_pattern)
+    return sorted(results)
+
+
+async def _walk(sftp, config, path, results, depth, maxdepth, mindepth, name,
+                iname, type, min_size, max_size, name_exclude, or_names,
+                mtime_min, mtime_max, path_pattern):
+    if maxdepth is not None and depth > maxdepth:
+        return
+    remote = _abs(config, path)
+    try:
+        entries = await sftp.readdir(remote)
+    except asyncssh.SFTPNoSuchFile:
+        return
+    for entry in entries:
+        if entry.filename in (".", ".."):
+            continue
+        child = f"{path.rstrip('/')}/{entry.filename}"
+        is_dir = entry.attrs.type == asyncssh.FILEXFER_TYPE_DIRECTORY
+        if _matches(entry, child, is_dir, depth + 1, mindepth, name, iname,
+                    type, min_size, max_size, name_exclude, or_names,
+                    mtime_min, mtime_max, path_pattern):
+            results.append(child)
+        if is_dir:
+            await _walk(sftp, config, child, results, depth + 1, maxdepth,
+                        mindepth, name, iname, type, min_size, max_size,
+                        name_exclude, or_names, mtime_min, mtime_max,
+                        path_pattern)
+
+
+def _matches(entry, path, is_dir, depth, mindepth, name, iname, type, min_size,
+             max_size, name_exclude, or_names, mtime_min, mtime_max,
+             path_pattern):
+    if mindepth is not None and depth < mindepth:
+        return False
+    if type in ("f", "file") and is_dir:
+        return False
+    if type in ("d", "directory") and not is_dir:
+        return False
+    basename = path.rsplit("/", 1)[-1]
+    if name and not fnmatch.fnmatch(basename, name):
+        return False
+    if iname and not fnmatch.fnmatch(basename.lower(), iname.lower()):
+        return False
+    if name_exclude and fnmatch.fnmatch(basename, name_exclude):
+        return False
+    if or_names and not any(fnmatch.fnmatch(basename, n) for n in or_names):
+        return False
+    if path_pattern and not fnmatch.fnmatch(path, path_pattern):
+        return False
+    size = entry.attrs.size or 0
+    if min_size is not None and size < min_size:
+        return False
+    if max_size is not None and size > max_size:
+        return False
+    if mtime_min is not None or mtime_max is not None:
+        mtime = entry.attrs.mtime
+        if mtime is not None:
+            if mtime_min is not None and mtime < mtime_min:
+                return False
+            if mtime_max is not None and mtime > mtime_max:
+                return False
+    return True

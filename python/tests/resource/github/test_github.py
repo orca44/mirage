@@ -1,0 +1,115 @@
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
+from unittest.mock import patch
+
+import pytest
+
+from mirage.core.github.config import GitHubConfig
+from mirage.core.github.tree_entry import TreeEntry
+from mirage.resource.github.github import GitHubResource
+from mirage.types import ResourceName
+
+CONFIG = GitHubConfig(token="test-token")
+OWNER = "test-owner"
+REPO = "test-repo"
+
+
+def _make_resource(ref: str = "main",
+                   default_branch: str = "main",
+                   tree: dict | None = None,
+                   truncated: bool = False) -> GitHubResource:
+    if tree is None:
+        tree = {}
+    with patch("mirage.resource.github.github.fetch_default_branch_sync",
+               return_value=default_branch), \
+         patch("mirage.resource.github.github.fetch_tree_sync",
+               return_value=(tree, truncated)):
+        return GitHubResource(
+            config=CONFIG,
+            owner=OWNER,
+            repo=REPO,
+            ref=ref,
+        )
+
+
+def test_name() -> None:
+    resource = _make_resource()
+    assert resource.name == ResourceName.GITHUB
+
+
+def test_is_remote() -> None:
+    resource = _make_resource()
+    assert resource.is_remote is True
+
+
+def test_bind_args() -> None:
+    resource = _make_resource()
+    assert resource.accessor.config is CONFIG
+    assert resource.accessor.owner == OWNER
+    assert resource.accessor.repo == REPO
+    assert resource.accessor.ref == "main"
+
+
+def test_is_default_branch_true() -> None:
+    resource = _make_resource(ref="main", default_branch="main")
+    assert resource.is_default_branch is True
+
+
+def test_is_default_branch_false() -> None:
+    resource = _make_resource(ref="feature-branch", default_branch="main")
+    assert resource.is_default_branch is False
+
+
+@pytest.mark.asyncio
+async def test_fingerprint_returns_sha() -> None:
+    tree = {
+        "src/main.py":
+        TreeEntry(path="src/main.py", type="blob", sha="abc123", size=100),
+    }
+    resource = _make_resource(tree=tree)
+    result = await resource.fingerprint("src/main.py")
+    assert result == "abc123"
+
+
+@pytest.mark.asyncio
+async def test_fingerprint_strips_slash() -> None:
+    tree = {
+        "src/main.py":
+        TreeEntry(path="src/main.py", type="blob", sha="abc123", size=100),
+    }
+    resource = _make_resource(tree=tree)
+    result = await resource.fingerprint("/src/main.py")
+    assert result == "abc123"
+
+
+@pytest.mark.asyncio
+async def test_fingerprint_returns_none_when_path_not_in_tree() -> None:
+    resource = _make_resource()
+    result = await resource.fingerprint("nonexistent.py")
+    assert result is None
+
+
+@patch("mirage.resource.github.github.fetch_tree_sync")
+@patch("mirage.resource.github.github.fetch_default_branch_sync")
+def test_init_fetches_default_branch(mock_fetch_branch,
+                                     mock_fetch_tree) -> None:
+    mock_fetch_branch.return_value = "develop"
+    mock_fetch_tree.return_value = ({}, False)
+    resource = GitHubResource(config=CONFIG,
+                              owner=OWNER,
+                              repo=REPO,
+                              ref="main")
+    assert resource.accessor.default_branch == "develop"
+    mock_fetch_branch.assert_called_once_with(CONFIG, OWNER, REPO)

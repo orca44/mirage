@@ -1,0 +1,53 @@
+---
+title: OPFS
+icon: hard-drive
+description: Persistent in-browser filesystem backed by the Origin Private File System.
+---
+
+`OPFSResource` mounts the [Origin Private File System](https://web.dev/articles/origin-private-file-system) as a Mirage resource. Files persist across page reloads but stay scoped to the current origin.
+
+<Note>
+  Browser only. There is no OPFS in Node; for local persistence in Node, use [Disk](/typescript/setup/disk).
+</Note>
+
+## Install
+
+```bash
+pnpm add @struktoai/mirage-browser
+```
+
+## Config
+
+```ts
+import { MountMode, OPFSResource, Workspace } from '@struktoai/mirage-browser'
+
+const opfs = new OPFSResource({ root: 'mirage' })
+
+const ws = new Workspace({ '/data': opfs }, { mode: MountMode.WRITE })
+await ws.execute('echo persistent | tee /data/note.txt')
+```
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `root` | `''` | Subdirectory under the OPFS root. Useful to namespace multiple workspaces. |
+
+## Mount mode
+
+`read`, `write`, `exec`.
+
+## Storage and quotas
+
+The browser sets per-origin quotas (typically a fraction of free disk, single-digit GB on most setups). Hitting it raises `QuotaExceededError`.
+
+```ts
+const { quota, usage } = await navigator.storage.estimate()
+console.log(`${usage} / ${quota} bytes`)
+```
+
+For long-lived workspaces, request persistent storage early so the browser doesn't evict your data under storage pressure:
+
+```ts
+await navigator.storage.persist()
+```
+
+See [TypeScript Limitations: Browser](/typescript/limitations#browser) for the full set of browser constraints.

@@ -1,0 +1,55 @@
+{
+  "name": "@struktoai/mirage-core",
+  "version": "0.0.1-alpha.1",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@aws-sdk/client-s3": "^3.0.0",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "hyparquet-writer": "^0.13.0",
+    "pyodide": "^0.29.3",
+    "tree-sitter-bash": "^0.25.1",
+    "tsup": "^8.5.0",
+    "typescript": "^6.0.0",
+    "vitest": "^3.0.0"
+  },
+  "dependencies": {
+    "apache-arrow": "^21.1.0",
+    "h5wasm": "^0.10.1",
+    "hyparquet": "^1.25.6",
+    "jq-wasm": "1.1.0-jq-1.8.1",
+    "web-tree-sitter": "^0.26.8"
+  },
+  "peerDependencies": {
+    "@aws-sdk/client-s3": "^3.0.0",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "pyodide": "^0.29.0"
+  },
+  "peerDependenciesMeta": {
+    "@aws-sdk/client-s3": {
+      "optional": true
+    },
+    "@modelcontextprotocol/sdk": {
+      "optional": true
+    },
+    "pyodide": {
+      "optional": true
+    }
+  }
+}

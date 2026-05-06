@@ -1,0 +1,63 @@
+---
+title: Google Drive
+icon: google
+description: Mount Google Drive as a Mirage filesystem from Node or the browser.
+---
+
+`GDriveResource` exposes a user's Drive (My Drive plus shared drives the user can see) as a tree.
+
+Setup steps for OAuth credentials live at [Google Workspace Credentials](/home/setup/google).
+
+## Node
+
+```bash
+pnpm add @struktoai/mirage-node
+```
+
+```ts
+import { GDriveResource, MountMode, Workspace } from '@struktoai/mirage-node'
+
+const drive = new GDriveResource({
+  clientId: process.env.GOOGLE_CLIENT_ID!,
+  clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+  refreshToken: process.env.GOOGLE_REFRESH_TOKEN!,
+})
+
+const ws = new Workspace({ '/drive': drive }, { mode: MountMode.READ })
+await ws.execute('ls /drive/owned/')
+```
+
+## Browser
+
+```bash
+pnpm add @struktoai/mirage-browser
+```
+
+```ts
+import { GDriveResource, MountMode, Workspace } from '@struktoai/mirage-browser'
+
+const drive = new GDriveResource({
+  clientId: GOOGLE_CLIENT_ID,
+  clientSecret: GOOGLE_CLIENT_SECRET,
+  refreshToken: localStorage.getItem('gdrive.refresh_token')!,
+})
+
+const ws = new Workspace({ '/drive': drive }, { mode: MountMode.READ })
+```
+
+The browser examples in `examples/typescript/browser/src/gdrive_pkce.ts` show a full PKCE flow that keeps the secret out of the page.
+
+## Config
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `clientId` | required | Google OAuth client ID. |
+| `clientSecret` | required | Google OAuth client secret. Redacted in snapshots. |
+| `refreshToken` | required | User's refresh token. Redacted in snapshots. |
+| `refreshFn` | built-in | Optional override for the access-token refresh callback. |
+
+## Mount mode
+
+`read`, partial write (uploads under `/drive/owned/`).
+
+For the mounted layout (`owned/`, `shared/`, mime-aware listings) see the [Python Drive docs](/python/resource/gdrive).

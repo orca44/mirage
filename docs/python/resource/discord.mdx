@@ -1,0 +1,316 @@
+---
+title: Discord
+icon: discord
+---
+The Discord resource exposes guild, channel, and member data as a virtual
+filesystem mounted at some prefix such as `/discord/`.
+
+For token setup, see [Discord Setup](/python/setup/discord).
+
+## Config
+
+```python
+import os
+
+from mirage import MountMode, Workspace
+from mirage.resource.discord import DiscordConfig, DiscordResource
+
+config = DiscordConfig(token=os.environ["DISCORD_BOT_TOKEN"])
+resource = DiscordResource(config=config)
+ws = Workspace({"/discord": resource}, mode=MountMode.READ)
+```
+
+## Filesystem Layout
+
+```text
+/discord/
+  <guild-name>_<guild-id>/
+    channels/
+      <channel-name>_<channel-id>/
+        <yyyy-mm-dd>.jsonl
+        ...
+    members/
+      <username>_<user-id>.json
+      ...
+```
+
+Example:
+
+```text
+/discord/
+  My Server_111222333444555666/
+    channels/
+      general_777888999000111222/
+        2026-04-04.jsonl
+        2026-04-05.jsonl
+      random_777888999000111223/
+        2026-04-11.jsonl
+    members/
+      alice_444555666777888999.json
+      bob_444555666777888900.json
+```
+
+Directory and file names embed the Discord snowflake ID so that write
+commands (`discord-send-message --channel_id`, etc.) can reference
+the correct resource without extra lookups.
+
+### Guilds
+
+The root lists one directory per guild the bot has access to.
+Names containing `/` are replaced with `∕` (U+2215).
+The guild ID is appended after `_`.
+
+### Channels
+
+`/discord/<guild>/channels/` lists text channels (types 0, 5, 15).
+The channel ID is appended after `_`.
+Each channel directory contains day-partitioned `.jsonl` history files
+for the 30 days leading up to the channel's last message.
+
+The date range is derived from `last_message_id` on the channel object,
+so inactive channels show dates around their last activity, not today.
+
+### Members
+
+`/discord/<guild>/members/` lists one `.json` file per member.
+The user ID is appended after `_` in the filename.
+Reading a member file returns the full member payload from the Discord API.
+
+## Smart Commands
+
+### grep / rg at different scopes
+
+When `grep` or `rg` target a channel or guild directory (not a specific file),
+they use the Discord search API instead of downloading every `.jsonl` file:
+
+```bash
+# FILE level - downloads the .jsonl, greps locally
+grep hello "/discord/My Server/channels/general/2026-04-04.jsonl"
+
+# CHANNEL level - uses Discord search API (GET /guilds/{id}/messages/search)
+grep hello "/discord/My Server/channels/general/"
+
+# GUILD level - searches across all channels
+grep hello "/discord/My Server/"
+```
+
+Scope detection is handled by `mirage/core/discord/scope.py`.
+
+### head / tail
+
+`head` and `tail` on file-level paths use the Discord messages API directly
+(`GET /channels/{id}/messages`) instead of downloading the full day's history.
+
+## Cache
+
+The Discord resource uses `IndexCacheStore` (same as RAM/S3/disk/GitHub).
+Index entries store guild IDs, channel IDs, and `last_message_id` for
+date range computation. There is no separate content cache - file content
+caching is handled by the workspace `IOResult` mechanism.
+
+## Example
+
+```python
+import asyncio
+import os
+
+from dotenv import load_dotenv
+
+from mirage import MountMode, Workspace
+from mirage.resource.discord import DiscordConfig, DiscordResource
+
+load_dotenv(".env.development")
+
+config = DiscordConfig(token=os.environ["DISCORD_BOT_TOKEN"])
+resource = DiscordResource(config=config)
+
+
+async def main():
+    ws = Workspace({"/discord": resource}, mode=MountMode.READ)
+
+    # List guilds
+    r = await ws.execute("ls /discord/")
+    print(await r.stdout_str())
+
+    guild = r.stdout_str().strip().split("\n")[0].strip()
+
+    # List channels
+    r = await ws.execute(f'ls "/discord/{guild}/channels/"')
+    print(await r.stdout_str())
+
+    ch = r.stdout_str().strip().splitlines()[0].strip()
+    base = f"/discord/{guild}/channels/{ch}"
+
+    # Read messages from a specific date
+    r = await ws.execute(f'cat "{base}/2026-04-04.jsonl" | head -n 3')
+    print(await r.stdout_str())
+
+    # Extract usernames with jq
+    r = await ws.execute(
+        f'jq -r ".[] | .author.username" "{base}/2026-04-04.jsonl"')
+    print(await r.stdout_str())
+
+    # Count messages per user
+    r = await ws.execute(
+        f'cat "{base}/2026-04-04.jsonl"'
+        ' | jq -r ".[] | .author.username" | sort | uniq -c')
+    print(await r.stdout_str())
+
+    # Search across channel (uses Discord search API)
+    r = await ws.execute(f'grep hello "{base}/"')
+    print(await r.stdout_str())
+
+    # Search across guild
+    r = await ws.execute(f'grep hello "/discord/{guild}/"')
+    print(await r.stdout_str())
+
+    # Navigate with cd/pwd
+    await ws.execute(f'cd "{base}"')
+    r = await ws.execute("pwd")
+    print(await r.stdout_str())
+
+    # Relative paths after cd
+    r = await ws.execute("ls | tail -n 5")
+    print(await r.stdout_str())
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+See `examples/chat/discord.py` for the full working example.
+
+## Finding IDs
+
+Resource-specific commands require Discord snowflake IDs
+(`channel_id`, `guild_id`, `message_id`). These can be extracted
+from the filesystem:
+
+```bash
+# Guild ID - use stat
+stat "/discord/My Server"
+# → extra={"guild_id": "1256522563555819574"}
+
+# Channel ID - use stat
+stat "/discord/My Server/channels/general"
+# → extra={"channel_id": "1256522563555819574"}
+
+# Message ID - inside JSONL messages
+jq -r '.[] | "\(.id) [\(.author.username)] \(.content)"' \
+  "/discord/My Server/channels/general/2026-04-04.jsonl"
+# → 1489887688978075769 [alice] hello world
+
+# Find a message then reply
+jq -r '.[] | select(.content | test("hello")) | .id' \
+  "/discord/My Server/channels/general/2026-04-04.jsonl"
+# → 1489887688978075769
+discord-send-message --channel_id 1256522563555819574 \
+  --text "Reply" --message_id 1489887688978075769
+```
+
+## Working with Large Channels
+
+Tips for efficient access on busy channels:
+
+```bash
+# Check message count per day
+wc -l "/discord/My Server/channels/general/2026-04-04.jsonl"
+
+# Read only recent messages
+tail -n 10 "/discord/My Server/channels/general/2026-04-04.jsonl"
+
+# Search uses Discord API at channel/guild level (no file download)
+grep "keyword" "/discord/My Server/channels/general/"
+
+# Extract specific fields
+jq -r '.[] | "\(.author.username): \(.content)"' \
+  "/discord/My Server/channels/general/2026-04-04.jsonl" | head -n 20
+
+# Count messages per user
+cat "/discord/My Server/channels/general/2026-04-04.jsonl" \
+  | jq -r '.[] | .author.username' | sort | uniq -c
+```
+
+Note: `grep`/`rg` at channel or guild level uses the Discord search
+API instead of downloading every `.jsonl` file, making it efficient
+even for large channels.
+
+## Shell Commands
+
+Standard commands available on the mounted Discord tree:
+
+| Command         | Notes                                          |
+| --------------- | ---------------------------------------------- |
+| `ls`            | List guilds, channels, members, dates          |
+| `cat`           | Read .jsonl history or member .json            |
+| `head` / `tail` | Smart: uses messages API for file scope        |
+| `grep` / `rg`   | Smart: uses search API for channel/guild scope |
+| `jq`            | Query JSON; use `.[]` prefix for JSONL files   |
+| `wc`            | Line/word/byte counts                          |
+| `stat`          | File metadata (name, size, type)               |
+| `find`          | Recursive search with `-name`, `-maxdepth`     |
+| `tree`          | Directory tree view                            |
+
+Resource-specific commands:
+
+### `discord-send-message`
+
+Post a message to a channel, optionally as a reply.
+
+```bash
+discord-send-message --channel_id 1256522563555819574 --text "Hello from MIRAGE"
+discord-send-message --channel_id 1256522563555819574 --text "Reply" --message_id 1489887688978075769
+```
+
+| Option         | Required | Description                  |
+| -------------- | -------- | ---------------------------- |
+| `--channel_id` | yes      | Discord channel snowflake ID |
+| `--text`       | yes      | Message text to send         |
+| `--message_id` | no       | Message ID to reply to       |
+
+The channel ID can be found in directory names under
+`/discord/<guild>/channels/` or via `stat`. Returns the
+posted message JSON.
+
+### `discord-add-reaction`
+
+Add an emoji reaction to a message.
+
+```bash
+discord-add-reaction --channel_id 1256522563555819574 --message_id 1489887688978075769 --reaction 👍
+```
+
+| Option         | Required | Description                  |
+| -------------- | -------- | ---------------------------- |
+| `--channel_id` | yes      | Discord channel snowflake ID |
+| `--message_id` | yes      | Message snowflake ID         |
+| `--reaction`   | yes      | Emoji (unicode or name)      |
+
+### `discord-list-members`
+
+Search guild members by name.
+
+```bash
+discord-list-members --guild_id 1256522563555819574 --query "alice"
+```
+
+| Option       | Required | Description             |
+| ------------ | -------- | ----------------------- |
+| `--guild_id` | yes      | Discord guild snowflake |
+| `--query`    | yes      | Username search query   |
+
+Returns matching members as JSON array.
+
+### `discord-get-server-info`
+
+Get full guild metadata from the Discord API.
+
+```bash
+discord-get-server-info --guild_id 1256522563555819574
+```
+
+| Option       | Required | Description             |
+| ------------ | -------- | ----------------------- |
+| `--guild_id` | yes      | Discord guild snowflake |
+
+Returns the guild object JSON (name, icon, member count, etc.).

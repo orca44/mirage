@@ -1,0 +1,54 @@
+---
+title: Semantic Scholar
+icon: graduation-cap
+description: Mount Semantic Scholar papers and authors as a Mirage filesystem.
+---
+
+`SSCholarResource` exposes Semantic Scholar's paper and author APIs as a read-only tree.
+
+Setup steps for the API key live at [Semantic Scholar Credentials](/home/setup/sscholar).
+
+## Node
+
+```bash
+pnpm add @struktoai/mirage-node
+```
+
+```ts
+import { MountMode, SSCholarResource, Workspace } from '@struktoai/mirage-node'
+
+const sscholar = new SSCholarResource({
+  apiKey: process.env.SEMANTIC_SCHOLAR_API_KEY,
+})
+
+const ws = new Workspace({ '/papers': sscholar }, { mode: MountMode.READ })
+await ws.execute('ls /papers/search/')
+```
+
+## Browser
+
+```bash
+pnpm add @struktoai/mirage-browser
+```
+
+```ts
+import { MountMode, SSCholarResource, Workspace } from '@struktoai/mirage-browser'
+
+const sscholar = new SSCholarResource({
+  apiKey: SEMANTIC_SCHOLAR_API_KEY,
+})
+```
+
+## Config
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `apiKey` | none | Optional API key. Without it you get the public rate limit. Redacted in snapshots. |
+| `baseUrl` | `https://api.semanticscholar.org` | Override for development proxies. |
+| `defaultListLimit` | `100` | Default page size for listings. |
+| `defaultSearchLimit` | `100` | Default page size for searches. |
+| `defaultSnippetLimit` | `5` | Snippets returned per paper. |
+
+## Mount mode
+
+`read`.

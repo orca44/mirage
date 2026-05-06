@@ -1,0 +1,8 @@
+packages:
+  - packages/*
+  - examples/*
+  - ../examples/typescript
+  - ../examples/typescript/browser
+
+onlyBuiltDependencies:
+  - '@zkochan/fuse-native'

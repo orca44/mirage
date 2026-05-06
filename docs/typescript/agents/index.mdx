@@ -1,0 +1,37 @@
+---
+title: Agents
+description: Drop a Mirage workspace into the TypeScript agent framework you already use.
+icon: robot
+---
+
+Each integration is a subpath of `@struktoai/mirage-agents`. Install it once; tree-shaking keeps unused adapters out of your bundle.
+
+```bash
+pnpm add @struktoai/mirage-agents @struktoai/mirage-node
+```
+
+For browser apps, swap `@struktoai/mirage-node` for `@struktoai/mirage-browser`.
+
+<CardGroup cols={2}>
+  <Card title="OpenAI Agents" icon="/images/openai-logo.svg" href="/typescript/agents/openai">
+    For the [@openai/agents](https://github.com/openai/openai-agents-js) SDK.
+  </Card>
+  <Card title="LangChain · deepagents" icon="/images/langchain-logo.svg" href="/typescript/agents/langchain">
+    For [deepagents](https://github.com/langchain-ai/deepagents) and any LangGraph-style agent.
+  </Card>
+  <Card title="Pi Coding Agent" icon="/images/pi-logo.svg" href="/typescript/agents/pi">
+    For [@mariozechner/pi-coding-agent](https://github.com/mariozechner/pi).
+  </Card>
+  <Card title="Vercel AI SDK" icon="triangle" href="/typescript/agents/vercel">
+    For [`ai`](https://sdk.vercel.ai) `generateText` and `streamText`.
+  </Card>
+  <Card title="Mastra" icon="wand-magic-sparkles" href="/typescript/agents/mastra">
+    For [Mastra](https://mastra.ai) `Agent` definitions.
+  </Card>
+  <Card title="Claude Code" icon="/images/claude-logo.svg" href="/typescript/agents/claude-code">
+    Mount a workspace via FUSE and run `claude` against it.
+  </Card>
+  <Card title="Codex" icon="/images/openai-logo.svg" href="/typescript/agents/codex">
+    Same pattern as Claude Code: mount, then `codex`.
+  </Card>
+</CardGroup>

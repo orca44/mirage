@@ -1,0 +1,257 @@
+{
+  "company": "Strukto",
+  "founded": "2024-03-01",
+  "valuation": 45000000,
+  "departments": [
+    {
+      "name": "Engineering",
+      "budget": 2500000,
+      "quarterly_spend": [580000, 620000, 640000, 660000],
+      "teams": [
+        {
+          "name": "Platform",
+          "lead": "Alice Chen",
+          "slack_channel": "#platform-eng",
+          "oncall_rotation": ["Alice Chen", "Dan Lee", "Bob Park"],
+          "members": [
+            {"name": "Alice Chen", "role": "lead", "level": "senior", "salary": 185000, "skills": ["python", "go", "kubernetes"], "joined": "2024-03-15", "reviews": [{"quarter": "Q1-2025", "score": 4.8, "feedback": "exceptional technical leadership"}, {"quarter": "Q2-2025", "score": 4.7, "feedback": "drove mirage architecture"}]},
+            {"name": "Bob Park", "role": "backend", "level": "mid", "salary": 140000, "skills": ["python", "postgres"], "joined": "2024-06-01", "reviews": [{"quarter": "Q1-2025", "score": 4.2, "feedback": "solid contributor"}, {"quarter": "Q2-2025", "score": 4.5, "feedback": "growing into senior scope"}]},
+            {"name": "Carol Wu", "role": "backend", "level": "junior", "salary": 105000, "skills": ["python"], "joined": "2025-01-10", "reviews": [{"quarter": "Q1-2025", "score": 3.8, "feedback": "ramping up well"}]},
+            {"name": "Dan Lee", "role": "devops", "level": "senior", "salary": 175000, "skills": ["terraform", "kubernetes", "aws", "gcp"], "joined": "2024-04-01", "reviews": [{"quarter": "Q1-2025", "score": 4.6, "feedback": "infra reliability improved 40%"}, {"quarter": "Q2-2025", "score": 4.4, "feedback": "mentoring junior engineers"}]}
+          ],
+          "projects": [
+            {
+              "name": "mirage",
+              "status": "active",
+              "priority": 1,
+              "started": "2025-09-15",
+              "milestones": [
+                {"name": "v0.1-alpha", "date": "2025-11-01", "completed": true},
+                {"name": "v0.5-beta", "date": "2026-02-01", "completed": true},
+                {"name": "v1.0-ga", "date": "2026-06-01", "completed": false}
+              ],
+              "metrics": {"commits": 847, "open_issues": 23, "closed_issues": 312, "test_coverage": 0.87},
+              "dependencies": ["pipeline-v2", "agent-sdk"]
+            },
+            {
+              "name": "pipeline-v2",
+              "status": "planning",
+              "priority": 2,
+              "started": null,
+              "milestones": [],
+              "metrics": {"commits": 0, "open_issues": 5, "closed_issues": 0, "test_coverage": null},
+              "dependencies": []
+            }
+          ],
+          "incidents": [
+            {"id": "INC-042", "severity": "p1", "title": "S3 mount timeout under load", "date": "2026-01-15", "resolved": true, "ttd_minutes": 12, "ttr_minutes": 45, "root_cause": "connection pool exhaustion", "owner": "Dan Lee"},
+            {"id": "INC-051", "severity": "p2", "title": "Cache invalidation race condition", "date": "2026-02-20", "resolved": true, "ttd_minutes": 35, "ttr_minutes": 120, "root_cause": "missing lock on concurrent reads", "owner": "Alice Chen"},
+            {"id": "INC-063", "severity": "p3", "title": "Memory leak in long-running grep pipes", "date": "2026-03-10", "resolved": false, "ttd_minutes": null, "ttr_minutes": null, "root_cause": null, "owner": "Bob Park"}
+          ]
+        },
+        {
+          "name": "AI",
+          "lead": "Eve Santos",
+          "slack_channel": "#ai-team",
+          "oncall_rotation": ["Eve Santos", "Grace Kim"],
+          "members": [
+            {"name": "Eve Santos", "role": "lead", "level": "senior", "salary": 195000, "skills": ["python", "pytorch", "mlops", "cuda"], "joined": "2024-05-01", "reviews": [{"quarter": "Q1-2025", "score": 4.9, "feedback": "built ML platform from scratch"}, {"quarter": "Q2-2025", "score": 4.8, "feedback": "agent-sdk is company-defining"}]},
+            {"name": "Frank Liu", "role": "ml-engineer", "level": "mid", "salary": 155000, "skills": ["python", "pytorch", "onnx"], "joined": "2024-09-15", "reviews": [{"quarter": "Q1-2025", "score": 4.0, "feedback": "good model optimization work"}, {"quarter": "Q2-2025", "score": 4.3, "feedback": "latency improvements impressive"}]},
+            {"name": "Grace Kim", "role": "ml-engineer", "level": "senior", "salary": 180000, "skills": ["python", "jax", "triton", "cuda"], "joined": "2024-07-01", "reviews": [{"quarter": "Q1-2025", "score": 4.7, "feedback": "triton kernels are exceptional"}, {"quarter": "Q2-2025", "score": 4.6, "feedback": "eval framework design is solid"}]}
+          ],
+          "projects": [
+            {
+              "name": "agent-sdk",
+              "status": "active",
+              "priority": 1,
+              "started": "2025-11-01",
+              "milestones": [
+                {"name": "tool-use-v1", "date": "2026-01-15", "completed": true},
+                {"name": "multi-agent", "date": "2026-04-01", "completed": false},
+                {"name": "production-hardening", "date": "2026-07-01", "completed": false}
+              ],
+              "metrics": {"commits": 523, "open_issues": 41, "closed_issues": 189, "test_coverage": 0.82},
+              "dependencies": ["eval-framework"]
+            },
+            {
+              "name": "eval-framework",
+              "status": "active",
+              "priority": 2,
+              "started": "2026-01-10",
+              "milestones": [
+                {"name": "baseline-evals", "date": "2026-02-15", "completed": true},
+                {"name": "regression-suite", "date": "2026-04-15", "completed": false}
+              ],
+              "metrics": {"commits": 156, "open_issues": 12, "closed_issues": 67, "test_coverage": 0.91},
+              "dependencies": []
+            },
+            {
+              "name": "model-serving",
+              "status": "completed",
+              "priority": 3,
+              "started": "2025-06-01",
+              "milestones": [
+                {"name": "single-model", "date": "2025-08-01", "completed": true},
+                {"name": "multi-model", "date": "2025-10-15", "completed": true},
+                {"name": "auto-scaling", "date": "2025-12-01", "completed": true}
+              ],
+              "metrics": {"commits": 412, "open_issues": 3, "closed_issues": 201, "test_coverage": 0.94},
+              "dependencies": []
+            }
+          ],
+          "incidents": [
+            {"id": "INC-038", "severity": "p1", "title": "Model serving OOM on large batch", "date": "2025-12-05", "resolved": true, "ttd_minutes": 5, "ttr_minutes": 30, "root_cause": "unbounded batch accumulation", "owner": "Eve Santos"},
+            {"id": "INC-055", "severity": "p2", "title": "Eval pipeline stale cache", "date": "2026-02-28", "resolved": true, "ttd_minutes": 60, "ttr_minutes": 180, "root_cause": "redis TTL misconfigured", "owner": "Frank Liu"}
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Product",
+      "budget": 1200000,
+      "quarterly_spend": [280000, 290000, 310000, 320000],
+      "teams": [
+        {
+          "name": "Growth",
+          "lead": "Hank Brown",
+          "slack_channel": "#growth",
+          "oncall_rotation": ["Hank Brown"],
+          "members": [
+            {"name": "Hank Brown", "role": "lead", "level": "senior", "salary": 165000, "skills": ["analytics", "sql", "figma", "amplitude"], "joined": "2024-08-01", "reviews": [{"quarter": "Q1-2025", "score": 4.3, "feedback": "strong product instincts"}, {"quarter": "Q2-2025", "score": 4.5, "feedback": "onboarding conversion up 25%"}]},
+            {"name": "Iris Zhang", "role": "designer", "level": "mid", "salary": 130000, "skills": ["figma", "css", "framer"], "joined": "2024-10-01", "reviews": [{"quarter": "Q1-2025", "score": 4.1, "feedback": "clean design system"}, {"quarter": "Q2-2025", "score": 4.4, "feedback": "user research driving decisions"}]},
+            {"name": "Jack Patel", "role": "pm", "level": "mid", "salary": 145000, "skills": ["sql", "analytics", "linear"], "joined": "2025-02-01", "reviews": [{"quarter": "Q2-2025", "score": 4.0, "feedback": "good stakeholder management"}]}
+          ],
+          "projects": [
+            {
+              "name": "onboarding-v3",
+              "status": "active",
+              "priority": 1,
+              "started": "2026-02-01",
+              "milestones": [
+                {"name": "user-research", "date": "2026-02-15", "completed": true},
+                {"name": "prototype", "date": "2026-03-15", "completed": true},
+                {"name": "launch", "date": "2026-05-01", "completed": false}
+              ],
+              "metrics": {"commits": 89, "open_issues": 8, "closed_issues": 34, "test_coverage": 0.72},
+              "dependencies": ["agent-sdk"]
+            },
+            {
+              "name": "dashboard-redesign",
+              "status": "planning",
+              "priority": 2,
+              "started": null,
+              "milestones": [],
+              "metrics": {"commits": 0, "open_issues": 3, "closed_issues": 0, "test_coverage": null},
+              "dependencies": ["onboarding-v3"]
+            }
+          ],
+          "incidents": []
+        }
+      ]
+    },
+    {
+      "name": "Infrastructure",
+      "budget": 1800000,
+      "quarterly_spend": [420000, 440000, 460000, 480000],
+      "teams": [
+        {
+          "name": "SRE",
+          "lead": "Karen Okafor",
+          "slack_channel": "#sre",
+          "oncall_rotation": ["Karen Okafor", "Leo Martinez", "Mia Tanaka"],
+          "members": [
+            {"name": "Karen Okafor", "role": "lead", "level": "senior", "salary": 190000, "skills": ["kubernetes", "prometheus", "grafana", "terraform"], "joined": "2024-03-15", "reviews": [{"quarter": "Q1-2025", "score": 4.7, "feedback": "observability stack is world-class"}, {"quarter": "Q2-2025", "score": 4.8, "feedback": "zero p1 incidents in Q2"}]},
+            {"name": "Leo Martinez", "role": "sre", "level": "mid", "salary": 150000, "skills": ["kubernetes", "python", "prometheus"], "joined": "2025-03-01", "reviews": [{"quarter": "Q2-2025", "score": 4.2, "feedback": "good runbook documentation"}]},
+            {"name": "Mia Tanaka", "role": "sre", "level": "senior", "salary": 178000, "skills": ["aws", "gcp", "terraform", "ansible"], "joined": "2024-06-15", "reviews": [{"quarter": "Q1-2025", "score": 4.5, "feedback": "multi-cloud migration on track"}, {"quarter": "Q2-2025", "score": 4.6, "feedback": "cost optimization saved 30%"}]}
+          ],
+          "projects": [
+            {
+              "name": "multi-cloud",
+              "status": "active",
+              "priority": 1,
+              "started": "2025-07-01",
+              "milestones": [
+                {"name": "aws-baseline", "date": "2025-09-01", "completed": true},
+                {"name": "gcp-parity", "date": "2026-03-01", "completed": true},
+                {"name": "failover-testing", "date": "2026-06-01", "completed": false}
+              ],
+              "metrics": {"commits": 334, "open_issues": 15, "closed_issues": 178, "test_coverage": 0.79},
+              "dependencies": []
+            },
+            {
+              "name": "cost-optimization",
+              "status": "active",
+              "priority": 2,
+              "started": "2026-01-01",
+              "milestones": [
+                {"name": "audit", "date": "2026-01-15", "completed": true},
+                {"name": "reserved-instances", "date": "2026-02-15", "completed": true},
+                {"name": "spot-fleet", "date": "2026-04-01", "completed": false}
+              ],
+              "metrics": {"commits": 67, "open_issues": 4, "closed_issues": 29, "test_coverage": 0.85},
+              "dependencies": ["multi-cloud"]
+            }
+          ],
+          "incidents": [
+            {"id": "INC-029", "severity": "p1", "title": "Full cluster outage during upgrade", "date": "2025-10-22", "resolved": true, "ttd_minutes": 3, "ttr_minutes": 90, "root_cause": "incompatible CRD version", "owner": "Karen Okafor"},
+            {"id": "INC-044", "severity": "p1", "title": "DNS resolution failure", "date": "2026-01-20", "resolved": true, "ttd_minutes": 8, "ttr_minutes": 25, "root_cause": "coredns pods evicted by OOM", "owner": "Leo Martinez"},
+            {"id": "INC-058", "severity": "p2", "title": "Prometheus storage full", "date": "2026-03-05", "resolved": true, "ttd_minutes": 45, "ttr_minutes": 60, "root_cause": "retention policy too aggressive", "owner": "Mia Tanaka"}
+          ]
+        }
+      ]
+    }
+  ],
+  "locations": [
+    {"city": "San Francisco", "country": "US", "timezone": "America/Los_Angeles", "headcount": 7, "office_type": "hq", "monthly_cost": 85000, "amenities": ["gym", "cafeteria", "parking"]},
+    {"city": "Seoul", "country": "KR", "timezone": "Asia/Seoul", "headcount": 3, "office_type": "coworking", "monthly_cost": 12000, "amenities": ["meeting_rooms"]},
+    {"city": "Toronto", "country": "CA", "timezone": "America/Toronto", "headcount": 2, "office_type": "remote", "monthly_cost": 3000, "amenities": []},
+    {"city": "London", "country": "GB", "timezone": "Europe/London", "headcount": 1, "office_type": "remote", "monthly_cost": 2500, "amenities": []}
+  ],
+  "vendor_contracts": [
+    {"vendor": "AWS", "service": "cloud", "annual_cost": 960000, "renewal": "2027-01-01", "tier": "enterprise"},
+    {"vendor": "GCP", "service": "cloud", "annual_cost": 480000, "renewal": "2026-09-01", "tier": "premium"},
+    {"vendor": "Datadog", "service": "observability", "annual_cost": 120000, "renewal": "2026-06-01", "tier": "pro"},
+    {"vendor": "Linear", "service": "project-management", "annual_cost": 7200, "renewal": "2026-04-01", "tier": "business"},
+    {"vendor": "Figma", "service": "design", "annual_cost": 4800, "renewal": "2026-07-01", "tier": "organization"},
+    {"vendor": "Anthropic", "service": "ai-api", "annual_cost": 240000, "renewal": "2026-12-01", "tier": "enterprise"}
+  ],
+  "okrs": [
+    {
+      "quarter": "Q1-2026",
+      "objectives": [
+        {
+          "title": "Launch mirage v1.0",
+          "key_results": [
+            {"description": "Ship GA release", "target": 1, "actual": 0, "unit": "release"},
+            {"description": "Onboard 10 enterprise customers", "target": 10, "actual": 4, "unit": "customers"},
+            {"description": "Achieve 99.9% uptime", "target": 99.9, "actual": 99.7, "unit": "percent"}
+          ]
+        },
+        {
+          "title": "Build world-class AI capabilities",
+          "key_results": [
+            {"description": "Launch agent-sdk multi-agent", "target": 1, "actual": 0, "unit": "release"},
+            {"description": "Eval coverage across 50 benchmarks", "target": 50, "actual": 32, "unit": "benchmarks"},
+            {"description": "P95 inference latency under 200ms", "target": 200, "actual": 185, "unit": "ms"}
+          ]
+        },
+        {
+          "title": "Operational excellence",
+          "key_results": [
+            {"description": "Mean time to detect under 15 min", "target": 15, "actual": 22, "unit": "minutes"},
+            {"description": "Mean time to resolve under 60 min", "target": 60, "actual": 75, "unit": "minutes"},
+            {"description": "Cloud cost reduction 20%", "target": 20, "actual": 30, "unit": "percent"}
+          ]
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "version": "3.0",
+    "last_updated": "2026-03-25T00:00:00Z",
+    "total_headcount": 13,
+    "total_budget": 5500000,
+    "fiscal_year": "2026",
+    "data_classification": "internal"
+  }
+}

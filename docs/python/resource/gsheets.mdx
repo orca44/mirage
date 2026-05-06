@@ -1,0 +1,238 @@
+---
+title: Google Sheets
+icon: table
+---
+The Google Sheets resource exposes Sheets spreadsheets as a virtual
+filesystem mounted at some prefix such as `/gsheets/`.
+
+For Google OAuth setup, see [Google Workspace Setup](/python/setup/google).
+
+## Config
+
+```python
+import os
+
+from mirage import MountMode, Workspace
+from mirage.resource.gsheets import GSheetsConfig, GSheetsResource
+
+config = GSheetsConfig(
+    client_id=os.environ["GOOGLE_CLIENT_ID"],
+    client_secret=os.environ["GOOGLE_CLIENT_SECRET"],
+    refresh_token=os.environ["GOOGLE_REFRESH_TOKEN"],
+)
+resource = GSheetsResource(config=config)
+ws = Workspace({"/gsheets": resource}, mode=MountMode.READ)
+```
+
+## Filesystem Layout
+
+```text
+/gsheets/
+  owned/
+    <YYYY-MM-DD>_<sanitized-title>__<spreadsheet-id>.gsheet.json
+    ...
+  shared/
+    <YYYY-MM-DD>_<sanitized-title>__<spreadsheet-id>.gsheet.json
+    ...
+```
+
+Example:
+
+```text
+/gsheets/
+  owned/
+    2026-04-04_Roadmap__1AbCdEf.gsheet.json
+    2026-04-10_Expenses__2BcDeFg.gsheet.json
+  shared/
+    2026-04-03_Budget__9XyZ.gsheet.json
+```
+
+Spreadsheets are split into `owned` (spreadsheets you created) and
+`shared` (spreadsheets shared with you). The filename shape is:
+
+```text
+<YYYY-MM-DD>_<sanitized-title>__<spreadsheet-id>.gsheet.json
+```
+
+If the modified date is unavailable, the date prefix is omitted.
+Reading a spreadsheet file returns the full Google Sheets API JSON
+for that spreadsheet, including sheet metadata.
+
+## Cache
+
+The Google Sheets resource uses `IndexCacheStore`. Index entries
+store spreadsheet IDs and metadata. There is no separate content
+cache -- file content caching is handled by the workspace `IOResult`
+mechanism.
+
+## Example
+
+```python
+import asyncio
+import os
+
+from dotenv import load_dotenv
+
+from mirage import MountMode, Workspace
+from mirage.resource.gsheets import GSheetsConfig, GSheetsResource
+
+load_dotenv(".env.development")
+
+config = GSheetsConfig(
+    client_id=os.environ["GOOGLE_CLIENT_ID"],
+    client_secret=os.environ["GOOGLE_CLIENT_SECRET"],
+    refresh_token=os.environ["GOOGLE_REFRESH_TOKEN"],
+)
+resource = GSheetsResource(config=config)
+
+
+async def main():
+    ws = Workspace({"/gsheets": resource}, mode=MountMode.READ)
+
+    # List structure
+    r = await ws.execute("ls /gsheets/")
+    print(await r.stdout_str())
+
+    # List owned spreadsheets
+    r = await ws.execute("ls /gsheets/owned/")
+    print(await r.stdout_str())
+
+    # Read a spreadsheet
+    r = await ws.execute(
+        "cat /gsheets/owned/2026-04-04_Roadmap__1AbCdEf.gsheet.json")
+    print(await r.stdout_str())
+
+    # Extract title with jq
+    r = await ws.execute(
+        'jq ".properties.title"'
+        " /gsheets/owned/2026-04-04_Roadmap__1AbCdEf.gsheet.json")
+    print(await r.stdout_str())
+
+    # Search across all spreadsheets
+    r = await ws.execute('rg "revenue" /gsheets/owned/')
+    print(await r.stdout_str())
+
+    # Tree view
+    r = await ws.execute("tree -L 1 /gsheets/")
+    print(await r.stdout_str())
+
+    # Read cell values
+    r = await ws.execute(
+        'gws-sheets-read --spreadsheet 1AbCdEf --range "Sheet1!A1:C3"')
+    print(await r.stdout_str())
+
+    # Append rows
+    r = await ws.execute(
+        "gws-sheets-append --spreadsheet 1AbCdEf --values Alice,30,NYC")
+    print(await r.stdout_str())
+
+    # Create a new spreadsheet
+    r = await ws.execute(
+        'gws-sheets-spreadsheets-create'
+        ' --json \'{"properties":{"title":"MIRAGE Sheet"}}\'')
+    print(await r.stdout_str())
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+See `examples/gsheets/gsheets.py` for the full working example.
+
+## Shell Commands
+
+Standard commands available on the mounted Google Sheets tree:
+
+| Command                             | Notes                          |
+| ----------------------------------- | ------------------------------ |
+| `ls`                                | List owned/shared spreadsheets |
+| `cat`                               | Read spreadsheet JSON          |
+| `head` / `tail`                     | First/last N lines             |
+| `grep` / `rg`                       | Pattern search                 |
+| `jq`                                | Query JSON fields              |
+| `wc`                                | Line/word/byte counts          |
+| `stat`                              | File metadata                  |
+| `find`                              | Recursive search               |
+| `tree`                              | Directory tree view            |
+| `basename` / `dirname` / `realpath` | Path utilities                 |
+| `nl`                                | Number lines                   |
+
+Resource-specific commands:
+
+### `gws-sheets-read`
+
+Read cell values from a spreadsheet range.
+
+```bash
+gws-sheets-read --spreadsheet 1AbCdEf --range "Sheet1!A1:C3"
+```
+
+| Option          | Required | Description               |
+| --------------- | -------- | ------------------------- |
+| `--spreadsheet` | yes      | Google spreadsheet ID     |
+| `--range`       | yes      | A1 notation range to read |
+
+Returns the cell values as JSON.
+
+### `gws-sheets-write`
+
+Write cell values to a spreadsheet range.
+
+```bash
+gws-sheets-write --params '{"spreadsheetId":"1AbCdEf","range":"Sheet1!A1"}' --json '{"values":[["x"]]}'
+```
+
+| Option     | Required | Description                                                     |
+| ---------- | -------- | --------------------------------------------------------------- |
+| `--params` | yes      | JSON with `spreadsheetId`, `range`, optional `valueInputOption` |
+| `--json`   | yes      | JSON with `values` 2D array                                     |
+
+Returns the update response JSON.
+
+### `gws-sheets-append`
+
+Append rows to a spreadsheet.
+
+```bash
+gws-sheets-append --spreadsheet 1AbCdEf --values Alice,30,NYC
+gws-sheets-append --spreadsheet 1AbCdEf --range "Sheet1!A1" --json-values '[["Bob",25,"LA"]]'
+```
+
+| Option          | Required | Description                          |
+| --------------- | -------- | ------------------------------------ |
+| `--spreadsheet` | yes      | Google spreadsheet ID                |
+| `--range`       | no       | A1 notation range (defaults to `A1`) |
+| `--values`      | no       | Comma-separated values for one row   |
+| `--json-values` | no       | JSON 2D array of values              |
+
+Either `--values` or `--json-values` is required. Returns the
+append response JSON.
+
+### `gws-sheets-spreadsheets-create`
+
+Create a new spreadsheet.
+
+```bash
+gws-sheets-spreadsheets-create --json '{"properties":{"title":"MIRAGE Sheet"}}'
+```
+
+| Option   | Required | Description                             |
+| -------- | -------- | --------------------------------------- |
+| `--json` | yes      | JSON body with `properties.title` field |
+
+Returns the created spreadsheet JSON.
+
+### `gws-sheets-spreadsheets-batchUpdate`
+
+Batch update a spreadsheet.
+
+```bash
+gws-sheets-spreadsheets-batchUpdate --params '{"spreadsheetId":"1AbCdEf"}' --json '{"requests":[]}'
+```
+
+| Option     | Required | Description                |
+| ---------- | -------- | -------------------------- |
+| `--params` | yes      | JSON with `spreadsheetId`  |
+| `--json`   | yes      | JSON with `requests` array |
+
+Returns the batch update response JSON.

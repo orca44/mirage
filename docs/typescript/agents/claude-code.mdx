@@ -1,0 +1,50 @@
+---
+title: Claude Code
+description: Run Anthropic's Claude Code CLI against any Mirage workspace by mounting it as a real filesystem via FUSE.
+icon: /images/claude-logo.svg
+---
+
+[Claude Code](https://github.com/anthropics/claude-code) is Anthropic's CLI for Claude. It expects a real filesystem and doesn't expose a pluggable backend, so instead of an SDK integration, Mirage exposes any workspace as a real filesystem via [FUSE](/typescript/setup/fuse) and lets you point `claude` at the mountpoint.
+
+## Install
+
+```bash
+pnpm add @struktoai/mirage-node @zkochan/fuse-native
+```
+
+See [TypeScript FUSE setup](/typescript/setup/fuse) for the pnpm `onlyBuiltDependencies` allow-list and macOS macFUSE 4 symlink workaround. Then install [Claude Code](https://docs.claude.com/en/docs/claude-code/setup) separately.
+
+## Usage
+
+```ts
+import { MountMode, RAMResource, S3Resource, Workspace } from '@struktoai/mirage-node'
+
+const ws = new Workspace(
+  {
+    '/': new RAMResource(),
+    '/s3/': new S3Resource({ bucket: 'my-bucket', /* ... */ }),
+  },
+  { mode: MountMode.WRITE, fuse: true },
+)
+await ws.execute('true') // wait for mount
+
+console.log(`cd ${ws.fuseMountpoint} && claude`)
+// ... run claude in another terminal, then:
+await ws.close() // auto-unmounts
+```
+
+The mountpoint behaves like a regular directory. `claude` reads, writes, runs `bash`, and patches files just like it would on a normal disk, every operation goes through Mirage's ops layer, so writes to `/s3/...` hit S3, writes to `/` stay in RAM.
+
+## Why FUSE instead of an SDK integration?
+
+Claude Code's tool-use loop is fully internal, there's no `Backend` interface to swap. FUSE gives Mirage a single unforced way in: present a real path, let the agent be the agent.
+
+You lose:
+- Per-tool prompt customization
+- Observation hooks on tool calls
+- Mirage's op-record telemetry on the agent's specific calls (host syscalls aren't recorded the same way)
+
+You gain:
+- Zero integration effort
+- Compatibility with every Claude Code feature, including future ones
+- The same approach works for any other directory-based agent ([OpenAI Codex](/typescript/agents/codex), `aider`, etc.)

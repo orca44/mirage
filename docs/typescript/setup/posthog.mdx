@@ -1,0 +1,53 @@
+---
+title: PostHog
+icon: chart-bar
+description: Mount PostHog projects, insights, and events as a Mirage filesystem.
+---
+
+`PostHogResource` exposes a PostHog instance as a read-only tree of projects, insights, and recent events.
+
+## Node
+
+```bash
+pnpm add @struktoai/mirage-node
+```
+
+```ts
+import { MountMode, PostHogResource, Workspace } from '@struktoai/mirage-node'
+
+const posthog = new PostHogResource({
+  apiKey: process.env.POSTHOG_API_KEY,
+  host: 'https://us.i.posthog.com',
+})
+
+const ws = new Workspace({ '/posthog': posthog }, { mode: MountMode.READ })
+await ws.execute('ls /posthog/')
+```
+
+## Browser
+
+```bash
+pnpm add @struktoai/mirage-browser
+```
+
+The browser variant routes through an HTTP driver so the API key never reaches the page directly:
+
+```ts
+import { MountMode, PostHogResource, Workspace } from '@struktoai/mirage-browser'
+
+const posthog = new PostHogResource({
+  host: '/api/posthog-proxy',
+})
+```
+
+## Config
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `apiKey` | none | Personal or project API key. Redacted in snapshots. |
+| `host` | `https://us.i.posthog.com` | Override for EU or self-hosted. |
+| `defaultListLimit` | `100` | Default page size. |
+
+## Mount mode
+
+`read`.

@@ -1,0 +1,76 @@
+// ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+// ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
+import type { GSheetsAccessor } from '../../accessor/gsheets.ts'
+import type { IndexCacheStore } from '../../cache/index/store.ts'
+import { FileStat, FileType, PathSpec } from '../../types.ts'
+import { readdir as coreReaddir } from './readdir.ts'
+
+const VIRTUAL_DIRS = new Set(['', 'owned', 'shared'])
+
+function enoent(p: string): Error & { code: string } {
+  const e = new Error(`ENOENT: ${p}`) as Error & { code: string }
+  e.code = 'ENOENT'
+  return e
+}
+
+export async function stat(
+  accessor: GSheetsAccessor,
+  path: PathSpec,
+  index?: IndexCacheStore,
+): Promise<FileStat> {
+  const prefix = path.prefix
+  let p = path.original
+  if (prefix !== '' && p.startsWith(prefix)) p = p.slice(prefix.length) || '/'
+  const key = p.replace(/^\/+|\/+$/g, '')
+
+  if (VIRTUAL_DIRS.has(key)) {
+    const name = key !== '' ? key : '/'
+    return new FileStat({ name, type: FileType.DIRECTORY })
+  }
+
+  if (index === undefined) throw enoent(path.original)
+  const virtualKey = prefix !== '' ? `${prefix}/${key}` : `/${key}`
+  let result = await index.get(virtualKey)
+  if (result.entry === undefined || result.entry === null) {
+    const parentVirtual = virtualKey.includes('/')
+      ? virtualKey.slice(0, virtualKey.lastIndexOf('/')) || '/'
+      : '/'
+    try {
+      await coreReaddir(
+        accessor,
+        new PathSpec({
+          original: parentVirtual,
+          directory: parentVirtual,
+          resolved: false,
+          prefix,
+        }),
+        index,
+      )
+    } catch {
+      // parent listing failed — fall through
+    }
+    result = await index.get(virtualKey)
+    if (result.entry === undefined || result.entry === null) {
+      throw enoent(path.original)
+    }
+  }
+  return new FileStat({
+    name: result.entry.vfsName !== '' ? result.entry.vfsName : result.entry.name,
+    type: FileType.JSON,
+    modified: result.entry.remoteTime,
+    size: result.entry.size,
+    extra: { doc_id: result.entry.id, doc_name: result.entry.name },
+  })
+}

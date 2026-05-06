@@ -1,0 +1,46 @@
+{
+  "name": "@struktoai/mirage-browser",
+  "version": "0.0.1-alpha.1",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "node scripts/embed-wasm.mjs && tsup",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@struktoai/mirage-core": "workspace:*"
+  },
+  "peerDependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@neondatabase/serverless": "^1.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@modelcontextprotocol/sdk": {
+      "optional": true
+    },
+    "@neondatabase/serverless": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@neondatabase/serverless": "^1.0.0",
+    "tree-sitter-bash": "^0.25.1",
+    "tsup": "^8.5.0",
+    "typescript": "^6.0.0",
+    "vitest": "^3.0.0",
+    "web-tree-sitter": "^0.26.8"
+  }
+}

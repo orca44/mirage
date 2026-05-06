@@ -1,0 +1,63 @@
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
+from unittest.mock import AsyncMock, patch
+
+import pytest
+
+from mirage.accessor.gdocs import GDocsAccessor
+from mirage.ops.gdocs.readdir import readdir
+from mirage.types import PathSpec
+
+
+def _scope(path: str, prefix: str = "/gdocs") -> PathSpec:
+    return PathSpec(original=path,
+                    directory=path.rsplit("/", 1)[0] or "/",
+                    prefix=prefix)
+
+
+@pytest.fixture
+def accessor():
+    return GDocsAccessor(config=None, token_manager=None)
+
+
+@pytest.mark.asyncio
+async def test_readdir_calls_core(accessor):
+    fn = readdir._registered_ops[0].fn
+    with patch(
+            "mirage.ops.gdocs.readdir.core_readdir",
+            new_callable=AsyncMock,
+            return_value=["/gdocs/owned", "/gdocs/shared"],
+    ) as mock:
+        scope = _scope("/gdocs")
+        result = await fn(accessor, scope, index=None)
+        mock.assert_called_once_with(accessor, _scope("/gdocs",
+                                                      prefix="/gdocs"), None)
+        assert result == ["/gdocs/owned", "/gdocs/shared"]
+
+
+@pytest.mark.asyncio
+async def test_readdir_owned(accessor):
+    fn = readdir._registered_ops[0].fn
+    with patch(
+            "mirage.ops.gdocs.readdir.core_readdir",
+            new_callable=AsyncMock,
+            return_value=["/gdocs/owned/file.gdoc.json"],
+    ) as mock:
+        scope = _scope("/gdocs/owned")
+        result = await fn(accessor, scope, index=None)
+        mock.assert_called_once_with(accessor,
+                                     _scope("/gdocs/owned", prefix="/gdocs"),
+                                     None)
+        assert "/gdocs/owned/file.gdoc.json" in result

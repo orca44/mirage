@@ -1,0 +1,59 @@
+---
+title: Google Slides
+icon: google
+description: Mount Google Slides decks as Mirage files from Node or the browser.
+---
+
+`GSlidesResource` exposes Slides decks as `.gslides.json` files containing the deck structure, slides, and text content.
+
+Setup steps for OAuth credentials live at [Google Workspace Credentials](/home/setup/google).
+
+## Node
+
+```bash
+pnpm add @struktoai/mirage-node
+```
+
+```ts
+import { GSlidesResource, MountMode, Workspace } from '@struktoai/mirage-node'
+
+const slides = new GSlidesResource({
+  clientId: process.env.GOOGLE_CLIENT_ID!,
+  clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+  refreshToken: process.env.GOOGLE_REFRESH_TOKEN!,
+})
+
+const ws = new Workspace({ '/slides': slides }, { mode: MountMode.READ })
+await ws.execute('ls /slides/owned/')
+```
+
+## Browser
+
+```bash
+pnpm add @struktoai/mirage-browser
+```
+
+```ts
+import { GSlidesResource, MountMode, Workspace } from '@struktoai/mirage-browser'
+
+const slides = new GSlidesResource({
+  clientId: GOOGLE_CLIENT_ID,
+  clientSecret: GOOGLE_CLIENT_SECRET,
+  refreshToken: localStorage.getItem('gslides.refresh_token')!,
+})
+```
+
+## Config
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `clientId` | required | Google OAuth client ID. |
+| `clientSecret` | required | Google OAuth client secret. Redacted in snapshots. |
+| `refreshToken` | required | User's refresh token. Redacted in snapshots. |
+| `refreshFn` | built-in | Optional override for the access-token refresh callback. |
+
+## Mount mode
+
+`read`, partial write (text element replacements).
+
+For the JSON structure (slides, layouts, text frames) see the [Python Slides docs](/python/resource/gslides).

@@ -1,0 +1,142 @@
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
+import dataclasses
+
+try:
+    import redis as sync_redis
+except ImportError as _err:
+    raise ImportError("RedisResource requires the 'redis' extra. "
+                      "Install with: pip install mirage-ai[redis]") from _err
+
+from mirage.accessor.redis import RedisAccessor
+from mirage.commands.builtin.redis import COMMANDS as REDIS_COMMANDS
+from mirage.core.redis.append import append_bytes
+from mirage.core.redis.copy import copy
+from mirage.core.redis.create import create
+from mirage.core.redis.du import du, du_all
+from mirage.core.redis.exists import exists
+from mirage.core.redis.find import find
+from mirage.core.redis.glob import resolve_glob as _resolve_glob
+from mirage.core.redis.mkdir import mkdir
+from mirage.core.redis.read import read_bytes
+from mirage.core.redis.readdir import readdir
+from mirage.core.redis.rename import rename
+from mirage.core.redis.rm import rm_r
+from mirage.core.redis.rmdir import rmdir
+from mirage.core.redis.stat import stat as redis_stat
+from mirage.core.redis.stream import read_stream
+from mirage.core.redis.truncate import truncate
+from mirage.core.redis.unlink import unlink
+from mirage.core.redis.write import write_bytes
+from mirage.ops.redis import OPS as REDIS_OPS
+from mirage.resource.base import BaseResource
+from mirage.resource.redis.prompt import PROMPT
+from mirage.resource.redis.store import RedisStore
+from mirage.types import PathSpec, ResourceName
+
+_REDIS_OPS = {
+    "read_bytes": read_bytes,
+    "write": write_bytes,
+    "readdir": readdir,
+    "stat": redis_stat,
+    "unlink": unlink,
+    "rmdir": rmdir,
+    "copy": copy,
+    "rename": rename,
+    "mkdir": mkdir,
+    "read_stream": read_stream,
+    "rm_recursive": rm_r,
+    "du_total": du,
+    "du_all": du_all,
+    "create": create,
+    "truncate": truncate,
+    "exists": exists,
+    "find_flat": find,
+    "append": append_bytes,
+}
+
+
+class RedisResource(BaseResource):
+
+    name: str = ResourceName.REDIS
+    _index_ttl: float = 0
+    _ops: dict = _REDIS_OPS
+    PROMPT: str = PROMPT
+
+    def __init__(
+        self,
+        url: str = "redis://localhost:6379/0",
+        key_prefix: str = "mirage:fs:",
+    ) -> None:
+        super().__init__()
+        self._store = RedisStore(url=url, key_prefix=key_prefix)
+        self.accessor = RedisAccessor(self._store)
+        for fn in REDIS_COMMANDS:
+            self.register(fn)
+        for fn in REDIS_OPS:
+            self.register_op(fn)
+
+    async def resolve_glob(self, paths, prefix: str = ""):
+        if prefix:
+            paths = [
+                dataclasses.replace(p, prefix=prefix)
+                if isinstance(p, PathSpec) and not p.prefix else p
+                for p in paths
+            ]
+        return await _resolve_glob(self.accessor, paths, self._index)
+
+    def get_state(self) -> dict:
+        prefix = self._store._prefix
+        url = self._store._url
+        client = sync_redis.Redis.from_url(url)
+        try:
+            files: dict[str, bytes] = {}
+            file_pattern = f"{prefix}file:*"
+            strip = len(f"{prefix}file:")
+            for key in client.scan_iter(file_pattern):
+                if isinstance(key, bytes):
+                    key = key.decode()
+                data = client.get(key)
+                if data is not None:
+                    files[key[strip:]] = data
+            dir_key = f"{prefix}dir"
+            members = client.smembers(dir_key)
+            dirs = sorted(m.decode() if isinstance(m, bytes) else m
+                          for m in members)
+        finally:
+            client.close()
+        return {
+            "type": self.name,
+            "needs_override": True,
+            "redacted_fields": ["url"],
+            "key_prefix": prefix,
+            "files": files,
+            "dirs": dirs,
+        }
+
+    def load_state(self, state: dict) -> None:
+        files = state.get("files", {})
+        dirs = state.get("dirs", ["/"])
+        prefix = self._store._prefix
+        client = sync_redis.Redis.from_url(self._store._url)
+        try:
+            pipe = client.pipeline()
+            for p, data in files.items():
+                pipe.set(f"{prefix}file:{p}", data)
+            for d in dirs:
+                pipe.sadd(f"{prefix}dir", d)
+            pipe.execute()
+        finally:
+            client.close()

@@ -1,0 +1,73 @@
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
+import json
+import os
+import time
+
+from dotenv import load_dotenv
+
+from mirage import MountMode, Workspace
+from mirage.resource.gdocs import GDocsConfig, GDocsResource
+
+load_dotenv(".env.development")
+
+config = GDocsConfig(
+    client_id=os.environ["GOOGLE_CLIENT_ID"],
+    client_secret=os.environ["GOOGLE_CLIENT_SECRET"],
+    refresh_token=os.environ["GOOGLE_REFRESH_TOKEN"],
+)
+resource = GDocsResource(config=config)
+
+with Workspace({"/gdocs/": resource}, mode=MountMode.READ, fuse=True) as ws:
+    time.sleep(1)
+    mp = ws.fuse_mountpoint
+
+    print(f"=== FUSE MODE: mounted at {mp} ===\n")
+
+    print("--- os.listdir() root ---")
+    roots = os.listdir(f"{mp}/gdocs")
+    for r in roots:
+        print(f"  {r}")
+
+    for section in ("owned", "shared"):
+        section_path = f"{mp}/gdocs/{section}"
+        if not os.path.isdir(section_path):
+            continue
+        docs = os.listdir(section_path)
+        if not docs:
+            continue
+        print(f"\n--- os.listdir() {section} (first 5) ---")
+        for d in docs[:5]:
+            print(f"  {d}")
+
+        first = docs[0]
+        path = f"{section_path}/{first}"
+        print(f"\n--- open() + read {first[:60]} ---")
+        with open(path) as f:
+            content = f.read()
+        parsed = json.loads(content)
+        print(f"  title: {parsed.get('title', 'N/A')}")
+        break
+
+    print(f"\n>>> FUSE mounted at: {mp}")
+    print(">>> Open another terminal and run:")
+    print(f">>>   ls {mp}/gdocs/")
+    print(f">>>   ls {mp}/gdocs/owned/")
+    print(">>> Press Enter to unmount and exit...")
+    input()
+
+    records = ws.ops.records
+    total = sum(r.bytes for r in records)
+    print(f"\nStats: {len(records)} ops, {total} bytes transferred")

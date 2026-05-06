@@ -1,0 +1,59 @@
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
+from collections.abc import AsyncIterator
+
+from mirage.accessor.s3 import S3Accessor
+from mirage.cache.index import IndexCacheStore
+from mirage.commands.builtin.utils.stream import _read_stdin_async
+from mirage.commands.registry import command
+from mirage.commands.spec import SPECS
+from mirage.core.s3.glob import resolve_glob
+from mirage.core.s3.read import read_bytes
+from mirage.io.types import ByteSource, IOResult
+from mirage.types import PathSpec
+
+
+@command("look", resource="s3", spec=SPECS["look"])
+async def look(
+    accessor: S3Accessor,
+    paths: list[PathSpec],
+    *texts: str,
+    stdin: AsyncIterator[bytes] | bytes | None = None,
+    f: bool = False,
+    index: IndexCacheStore = None,
+    **_extra: object,
+) -> tuple[ByteSource | None, IOResult]:
+    if not texts:
+        raise ValueError("look: missing prefix")
+    prefix = texts[0]
+    if paths:
+        paths = await resolve_glob(accessor, paths, index)
+        raw = await read_bytes(accessor, paths[0])
+    else:
+        raw = await _read_stdin_async(stdin)
+        if raw is None:
+            raise ValueError("look: missing input")
+    text = raw.decode(errors="replace")
+    lines = text.splitlines()
+    matched: list[str] = []
+    for line in lines:
+        cmp_line = line.lower() if f else line
+        cmp_prefix = prefix.lower() if f else prefix
+        if cmp_line.startswith(cmp_prefix):
+            matched.append(line)
+    if not matched:
+        return None, IOResult(exit_code=1)
+    output = "\n".join(matched) + "\n"
+    return output.encode(), IOResult()

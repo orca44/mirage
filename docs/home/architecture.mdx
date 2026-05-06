@@ -1,0 +1,36 @@
+---
+title: Architecture
+description: Four layers, one filesystem. How Mirage turns mounted services into one bash-driven environment.
+icon: cube
+---
+
+<div className="my-6">
+  <img noZoom src="/images/mirage-arch-light.svg" alt="Mirage architecture" className="block dark:hidden w-full" />
+  <img noZoom src="/images/mirage-arch-dark.svg" alt="Mirage architecture" className="hidden dark:block w-full" />
+</div>
+
+Mirage stacks four thin layers between an agent and the services it touches.
+
+## 1. AI Agent and Application
+
+The agent (or any application embedding Mirage) issues bash commands, VFS calls, or syscalls. One vocabulary, every backend.
+
+## 2. Mirage Bash and VFS
+
+The action surface. **Mirage Bash** parses commands with tree-sitter and runs them against the **Mirage VFS**, a unified filesystem API over every mount. A **FUSE Adapter** exposes the same tree to host tools when you want it. A **Command Registry** and **VFS Registry** describe what verbs and resources are available.
+
+## 3. Dispatcher & Cache
+
+The **Mirage Dispatcher** routes each operation to the mount that owns the path, joining pipelines that span systems. The **Index & File Cache** absorbs repeats: the first directory walk hits the API, the next serves from cache; the first read streams bytes, later reads are local.
+
+## 4. Infrastructure and Remote
+
+Whatever you mount: RAM, Disk, Redis, S3 / R2 / GCS / OCI / Supabase, Gmail / GDrive / GDocs / GSheets / GSlides, GitHub / Linear / Notion / Trello, Slack / Discord / Telegram / Email, MongoDB, SSH, and more. Each speaks the same filesystem semantics from the agent's point of view.
+
+Browse the [Resource Matrix](/home/resource-matrix) for the full list.
+
+## Where to go next
+
+- [Resource Matrix](/home/resource-matrix) to pick a backend to mount.
+- [Python Quickstart](/python/quickstart) for working code in minutes.
+- [TypeScript Quickstart](/typescript/quickstart) for the same Workspace API in Node, browser, or edge.

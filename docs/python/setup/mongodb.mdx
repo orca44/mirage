@@ -1,0 +1,58 @@
+---
+title: MongoDB
+icon: database
+description: Set up the MongoDB resource in Python.
+---
+
+## Dependencies
+
+```bash
+uv add motor
+```
+
+The `motor` package provides async MongoDB driver support built on `pymongo`.
+
+For credential setup, see the [MongoDB Setup](/home/setup/mongodb) guide.
+
+## Configuration
+
+### Mount all databases
+
+```python
+import os
+from mirage import Workspace, MountMode
+from mirage.resource.mongodb import MongoDBConfig, MongoDBResource
+
+config = MongoDBConfig(uri=os.environ["MONGODB_URI"])
+resource = MongoDBResource(config=config)
+ws = Workspace({"/mongodb/": resource}, mode=MountMode.READ)
+```
+
+### Mount specific databases
+
+```python
+config = MongoDBConfig(
+    uri=os.environ["MONGODB_URI"],
+    databases=["sample_mflix", "sample_analytics"],
+)
+resource = MongoDBResource(config=config)
+ws = Workspace({"/mongodb/": resource}, mode=MountMode.READ)
+```
+
+### Mount a single database (flat layout)
+
+```python
+config = MongoDBConfig(
+    uri=os.environ["MONGODB_URI"],
+    databases=["sample_mflix"],
+)
+resource = MongoDBResource(config=config)
+ws = Workspace({"/mongodb/": resource}, mode=MountMode.READ)
+```
+
+## Config Reference
+
+| Field       | Required | Description                                |
+| ----------- | -------- | ------------------------------------------ |
+| `uri`       | Yes      | MongoDB connection URI                     |
+| `databases` | No       | List of database names (omit to mount all) |

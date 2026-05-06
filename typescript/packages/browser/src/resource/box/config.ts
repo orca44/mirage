@@ -1,0 +1,54 @@
+// ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+// ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
+import { normalizeFields } from '@struktoai/mirage-core'
+
+export interface BoxConfig {
+  clientId?: string
+  clientSecret?: string
+  refreshToken?: string
+  accessToken?: string
+  refreshFn?: (
+    refreshToken: string,
+  ) => Promise<{ accessToken: string; refreshToken: string; expiresIn: number }>
+  onRefreshTokenRotated?: (newRefreshToken: string) => void | Promise<void>
+}
+
+export interface BoxConfigRedacted {
+  clientId?: string
+  clientSecret?: '<REDACTED>'
+  refreshToken?: '<REDACTED>'
+  accessToken?: '<REDACTED>'
+}
+
+export function redactBoxConfig(config: BoxConfig): BoxConfigRedacted {
+  const out: BoxConfigRedacted = {}
+  if (config.clientId !== undefined) out.clientId = config.clientId
+  if (config.clientSecret !== undefined) out.clientSecret = '<REDACTED>'
+  if (config.refreshToken !== undefined) out.refreshToken = '<REDACTED>'
+  if (config.accessToken !== undefined) out.accessToken = '<REDACTED>'
+  return out
+}
+
+export function normalizeBoxConfig(input: Record<string, unknown>): BoxConfig {
+  return normalizeFields(input, {
+    rename: {
+      client_id: 'clientId',
+      client_secret: 'clientSecret',
+      refresh_token: 'refreshToken',
+      access_token: 'accessToken',
+      developer_token: 'accessToken',
+    },
+  }) as unknown as BoxConfig
+}

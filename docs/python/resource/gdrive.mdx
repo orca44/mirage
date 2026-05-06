@@ -1,0 +1,390 @@
+---
+title: Google Drive
+icon: google
+---
+The Google Drive resource exposes a Google Drive account as a virtual
+filesystem mounted at some prefix such as `/gdrive/`.
+
+For Google OAuth setup, see [Google Workspace Setup](/python/setup/google).
+
+## Config
+
+```python
+import os
+
+from mirage import MountMode, Workspace
+from mirage.resource.gdrive import GoogleDriveConfig, GoogleDriveResource
+
+config = GoogleDriveConfig(
+    client_id=os.environ["GOOGLE_CLIENT_ID"],
+    client_secret=os.environ["GOOGLE_CLIENT_SECRET"],
+    refresh_token=os.environ["GOOGLE_REFRESH_TOKEN"],
+)
+resource = GoogleDriveResource(config=config)
+ws = Workspace({"/gdrive": resource}, mode=MountMode.READ)
+```
+
+## Filesystem Layout
+
+```text
+/gdrive/
+  <folder>/
+    <file>
+    <subfolder>/
+      ...
+    <name>.gdoc.json
+    <name>.gsheet.json
+    <name>.gslide.json
+```
+
+Example:
+
+```text
+/gdrive/
+  Projects/
+    spec.pdf
+    roadmap.gsheet.json
+    Budget/
+      Q1.gsheet.json
+      Q2.gsheet.json
+  Notes/
+    meeting.gdoc.json
+  Presentations/
+    quarterly_review.gslide.json
+  data.csv
+  report.pdf
+```
+
+The mount mirrors the actual Google Drive folder hierarchy. The root
+of the mount corresponds to the Drive API `root` folder. Subfolders
+appear as directories, and regular files keep their original names.
+
+### Synthetic Extensions
+
+Google Workspace files cannot be downloaded as raw bytes, so they
+are exposed with synthetic extensions and read via their respective
+APIs:
+
+| Extension      | Type          | Read via   |
+| -------------- | ------------- | ---------- |
+| `.gdoc.json`   | Google Docs   | Docs API   |
+| `.gsheet.json` | Google Sheets | Sheets API |
+| `.gslide.json` | Google Slides | Slides API |
+
+Regular files (PDFs, images, CSVs, etc.) are downloaded directly
+from Drive. Large regular files use streaming.
+
+## Cache
+
+The Google Drive resource uses `IndexCacheStore` (same as Slack,
+Gmail, and other resources). Index entries store folder IDs, file
+IDs, and file metadata. There is no separate content cache -- file
+content caching is handled by the workspace `IOResult` mechanism.
+
+## Example
+
+```python
+import asyncio
+import os
+
+from dotenv import load_dotenv
+
+from mirage import MountMode, Workspace
+from mirage.resource.gdrive import GoogleDriveConfig, GoogleDriveResource
+
+load_dotenv(".env.development")
+
+config = GoogleDriveConfig(
+    client_id=os.environ["GOOGLE_CLIENT_ID"],
+    client_secret=os.environ["GOOGLE_CLIENT_SECRET"],
+    refresh_token=os.environ["GOOGLE_REFRESH_TOKEN"],
+)
+resource = GoogleDriveResource(config=config)
+
+
+async def main():
+    ws = Workspace({"/gdrive": resource}, mode=MountMode.READ)
+
+    # List root
+    r = await ws.execute("ls /gdrive/ | head -n 10")
+    print(await r.stdout_str())
+
+    # Browse a subfolder
+    r = await ws.execute("ls /gdrive/Projects/")
+    print(await r.stdout_str())
+
+    # Read a regular file
+    r = await ws.execute("cat /gdrive/Projects/spec.pdf | head -c 200")
+    print(await r.stdout_str())
+
+    # Read a Google Doc title
+    r = await ws.execute('jq ".title" /gdrive/Notes/meeting.gdoc.json')
+    print(await r.stdout_str())
+
+    # Read a Google Sheet title
+    r = await ws.execute(
+        'jq ".properties.title" /gdrive/Projects/roadmap.gsheet.json')
+    print(await r.stdout_str())
+
+    # Read a Google Slides deck length
+    r = await ws.execute(
+        'jq ".slides | length"'
+        " /gdrive/Presentations/quarterly_review.gslide.json")
+    print(await r.stdout_str())
+
+    # Search across all files
+    r = await ws.execute('rg "quarterly" /gdrive/Projects/')
+    print(await r.stdout_str())
+
+    # Tree view
+    r = await ws.execute("tree -L 2 /gdrive/")
+    print(await r.stdout_str())
+
+    # Create a new Google Doc
+    r = await ws.execute(
+        "gws-docs-documents-create"
+        ' --json \'{"title": "New Doc from MIRAGE"}\'')
+    print(await r.stdout_str())
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+See `examples/google/gdrive.py` for the full working example.
+
+## Shell Commands
+
+Standard commands available on the mounted Google Drive tree:
+
+| Command         | Notes                                      |
+| --------------- | ------------------------------------------ |
+| `ls`            | List folders and files                     |
+| `cat`           | Read file content (regular or Workspace)   |
+| `head` / `tail` | First/last N lines or bytes                |
+| `grep` / `rg`   | Pattern search (file or directory level)   |
+| `jq`            | Query JSON fields on Workspace files       |
+| `wc`            | Line/word/byte counts                      |
+| `stat`          | File metadata (name, size, type)           |
+| `find`          | Recursive search with `-name`, `-maxdepth` |
+| `tree`          | Directory tree view                        |
+| `basename`      | Extract filename from path                 |
+| `dirname`       | Extract directory from path                |
+| `realpath`      | Resolve path to absolute form              |
+| `nl`            | Number lines of output                     |
+| `sort`          | Sort lines                                 |
+| `uniq`          | Deduplicate adjacent lines                 |
+| `cut`           | Extract fields/columns                     |
+| `awk`           | Pattern-directed scanning                  |
+| `sed`           | Stream editor                              |
+| `tr`            | Translate/delete characters                |
+| `diff`          | Compare two files                          |
+| `rev`           | Reverse lines                              |
+| `tac`           | Reverse file line order                    |
+| `paste`         | Merge lines of files                       |
+| `join`          | Join lines on a common field               |
+| `column`        | Columnate output                           |
+| `comm`          | Compare sorted files line by line          |
+| `fold`          | Wrap lines to a given width                |
+| `fmt`           | Reformat paragraph text                    |
+| `expand`        | Convert tabs to spaces                     |
+| `unexpand`      | Convert spaces to tabs                     |
+| `du`            | Estimate file space usage                  |
+| `shuf`          | Randomly permute lines                     |
+| `look`          | Display lines beginning with a prefix      |
+| `strings`       | Extract printable strings from binary      |
+| `base64`        | Base64 encode/decode                       |
+| `md5`           | MD5 checksum                               |
+| `sha256sum`     | SHA-256 checksum                           |
+| `xxd`           | Hex dump                                   |
+| `zcat`          | Read compressed files                      |
+| `zgrep`         | Search compressed files                    |
+| `readlink`      | Print resolved symbolic links              |
+| `cmp`           | Compare two files byte by byte             |
+| `tsort`         | Topological sort                           |
+| `file`          | Detect file type                           |
+
+## Data Format Support
+
+Google Drive may contain data files in binary columnar formats.
+These are auto-converted to CSV on read. Specialized variants
+of common commands handle them natively:
+
+| Format  | Extension  | Specialized commands                                                                                                                     |
+| ------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Parquet | `.parquet` | `cat-parquet`, `head-parquet`, `tail-parquet`, `wc-parquet`, `stat-parquet`, `grep-parquet`, `cut-parquet`, `ls-parquet`, `file-parquet` |
+| Feather | `.feather` | `cat-feather`, `head-feather`, `tail-feather`, `wc-feather`, `stat-feather`, `grep-feather`, `cut-feather`, `ls-feather`, `file-feather` |
+| HDF5    | `.hdf5`    | `cat-hdf5`, `head-hdf5`, `tail-hdf5`, `wc-hdf5`, `stat-hdf5`, `grep-hdf5`, `cut-hdf5`, `ls-hdf5`, `file-hdf5`                            |
+| ORC     | `.orc`     | `cat-orc`, `head-orc`, `tail-orc`, `wc-orc`, `stat-orc`, `grep-orc`, `cut-orc`, `ls-orc`, `file-orc`                                     |
+
+Example:
+
+```bash
+cat-parquet /gdrive/data/sales.parquet
+head-parquet -n 5 /gdrive/data/sales.parquet
+grep-parquet "revenue" /gdrive/data/sales.parquet
+wc-parquet /gdrive/data/sales.parquet
+```
+
+## Resource-Specific Commands
+
+Google Drive registers Google Workspace write commands so that
+Google-native files can be created and updated from the Drive mount.
+
+### `gws-docs-documents-create`
+
+Create a new Google Doc.
+
+```bash
+gws-docs-documents-create --json '{"title": "My Doc"}'
+```
+
+| Option   | Required | Description                  |
+| -------- | -------- | ---------------------------- |
+| `--json` | yes      | JSON body with `title` field |
+
+Returns the created document JSON.
+
+### `gws-docs-documents-batchUpdate`
+
+Apply batch updates to a Google Doc.
+
+```bash
+gws-docs-documents-batchUpdate \
+  --params '{"documentId": "DOC_ID"}' \
+  --json '{"requests": [...]}'
+```
+
+| Option     | Required | Description                     |
+| ---------- | -------- | ------------------------------- |
+| `--params` | yes      | JSON with `documentId`          |
+| `--json`   | yes      | JSON body with `requests` array |
+
+Returns the batch update response JSON.
+
+### `gws-docs-write`
+
+Append text to a Google Doc.
+
+```bash
+gws-docs-write --document DOC_ID --text "Hello from MIRAGE"
+```
+
+| Option       | Required | Description    |
+| ------------ | -------- | -------------- |
+| `--document` | yes      | Google Doc ID  |
+| `--text`     | yes      | Text to append |
+
+Returns the update response JSON.
+
+### `gws-sheets-read`
+
+Read values from a spreadsheet range.
+
+```bash
+gws-sheets-read --spreadsheet SHEET_ID --range "Sheet1!A1:C10"
+```
+
+| Option          | Required | Description       |
+| --------------- | -------- | ----------------- |
+| `--spreadsheet` | yes      | Spreadsheet ID    |
+| `--range`       | yes      | A1 notation range |
+
+Returns the range values.
+
+### `gws-sheets-write`
+
+Write values to a spreadsheet range.
+
+```bash
+gws-sheets-write \
+  --params '{"spreadsheetId": "SHEET_ID", "range": "Sheet1!A1:C3", "valueInputOption": "USER_ENTERED"}' \
+  --json '{"values": [["a", "b", "c"]]}'
+```
+
+| Option     | Required | Description                                                     |
+| ---------- | -------- | --------------------------------------------------------------- |
+| `--params` | yes      | JSON with `spreadsheetId`, `range`, optional `valueInputOption` |
+| `--json`   | yes      | JSON body with `values` array                                   |
+
+Returns the update response JSON.
+
+### `gws-sheets-append`
+
+Append rows to a spreadsheet.
+
+```bash
+gws-sheets-append --spreadsheet SHEET_ID --range "Sheet1!A1" --values "a,b,c"
+```
+
+| Option          | Required | Description                                    |
+| --------------- | -------- | ---------------------------------------------- |
+| `--spreadsheet` | yes      | Spreadsheet ID                                 |
+| `--range`       | no       | A1 notation range (defaults to `A1`)           |
+| `--values`      | no       | Comma-separated values for a single row        |
+| `--json-values` | no       | JSON array of rows (alternative to `--values`) |
+
+One of `--values` or `--json-values` is required. Returns the
+append response JSON.
+
+### `gws-sheets-spreadsheets-create`
+
+Create a new spreadsheet.
+
+```bash
+gws-sheets-spreadsheets-create --json '{"properties": {"title": "My Sheet"}}'
+```
+
+| Option   | Required | Description                       |
+| -------- | -------- | --------------------------------- |
+| `--json` | yes      | JSON body with `properties.title` |
+
+Returns the created spreadsheet JSON.
+
+### `gws-sheets-spreadsheets-batchUpdate`
+
+Apply batch updates to a spreadsheet.
+
+```bash
+gws-sheets-spreadsheets-batchUpdate \
+  --params '{"spreadsheetId": "SHEET_ID"}' \
+  --json '{"requests": [...]}'
+```
+
+| Option     | Required | Description                     |
+| ---------- | -------- | ------------------------------- |
+| `--params` | yes      | JSON with `spreadsheetId`       |
+| `--json`   | yes      | JSON body with `requests` array |
+
+Returns the batch update response JSON.
+
+### `gws-slides-presentations-create`
+
+Create a new Google Slides presentation.
+
+```bash
+gws-slides-presentations-create --json '{"title": "My Deck"}'
+```
+
+| Option   | Required | Description                  |
+| -------- | -------- | ---------------------------- |
+| `--json` | yes      | JSON body with `title` field |
+
+Returns the created presentation JSON.
+
+### `gws-slides-presentations-batchUpdate`
+
+Apply batch updates to a presentation.
+
+```bash
+gws-slides-presentations-batchUpdate \
+  --params '{"presentationId": "PRES_ID"}' \
+  --json '{"requests": [...]}'
+```
+
+| Option     | Required | Description                     |
+| ---------- | -------- | ------------------------------- |
+| `--params` | yes      | JSON with `presentationId`      |
+| `--json`   | yes      | JSON body with `requests` array |
+
+Returns the batch update response JSON.

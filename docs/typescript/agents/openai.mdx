@@ -1,0 +1,62 @@
+---
+title: OpenAI Agents SDK
+description: Run @openai/agents against a Mirage workspace using MirageShell and MirageEditor.
+icon: /images/openai-logo.svg
+---
+
+The OpenAI Agents SDK ([@openai/agents](https://github.com/openai/openai-agents-js)) ships `shellTool` and `applyPatchTool` primitives that take pluggable `Shell` and `Editor` backends. Mirage provides `MirageShell` and `MirageEditor` implementations that route every command and patch through your `Workspace` instead of the host shell.
+
+## Install
+
+`@struktoai/mirage-agents/openai` is runtime-agnostic. Pair it with `@struktoai/mirage-node` for Node or `@struktoai/mirage-browser` for the browser.
+
+<CodeGroup>
+```bash Node
+pnpm add @struktoai/mirage-agents @struktoai/mirage-node @openai/agents
+```
+```bash Browser
+pnpm add @struktoai/mirage-agents @struktoai/mirage-browser @openai/agents
+```
+</CodeGroup>
+
+## Usage
+
+```ts
+import { MountMode, OpsRegistry, RAMResource, Workspace } from '@struktoai/mirage-node'
+import { Agent, applyPatchTool, run, shellTool } from '@openai/agents'
+import { MirageEditor, MirageShell, buildSystemPrompt } from '@struktoai/mirage-agents/openai'
+
+const ram = new RAMResource()
+const ops = new OpsRegistry()
+for (const op of ram.ops()) ops.register(op)
+const ws = new Workspace({ '/': ram }, { mode: MountMode.WRITE, ops })
+
+const agent = new Agent({
+  name: 'Mirage RAM Agent',
+  model: 'gpt-5.5-mini',
+  instructions: buildSystemPrompt({
+    mountInfo: { '/': 'In-memory filesystem (read/write)' },
+  }),
+  tools: [
+    shellTool({ shell: new MirageShell(ws) }),
+    applyPatchTool({ editor: new MirageEditor(ws) }),
+  ],
+})
+
+await run(agent, "Create /hello.txt with 'hi from mirage' and cat it.")
+```
+
+## Exports
+
+| Symbol | Purpose |
+| --- | --- |
+| `MirageShell` | `Shell` implementation; pass to `shellTool({ shell })`. |
+| `MirageEditor` | `Editor` implementation; pass to `applyPatchTool({ editor })`. |
+| `buildSystemPrompt` | Generates a system prompt that describes mounted paths to the model. |
+| `MIRAGE_SYSTEM_PROMPT` | The default system prompt template (used by `buildSystemPrompt`). |
+
+## Examples
+
+- [`examples/typescript/agents/openai/ram_agent.ts`](https://github.com/strukto-ai/mirage/blob/main/examples/typescript/agents/openai/ram_agent.ts), RAM-only sandbox.
+- [`examples/typescript/agents/openai/multi_resource_agent.ts`](https://github.com/strukto-ai/mirage/blob/main/examples/typescript/agents/openai/multi_resource_agent.ts), RAM + S3 mounts.
+- [`examples/typescript/agents/openai/snapshot.ts`](https://github.com/strukto-ai/mirage/blob/main/examples/typescript/agents/openai/snapshot.ts), branch & roll back agent state.

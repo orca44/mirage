@@ -1,0 +1,92 @@
+---
+title: Sessions
+description: "Per-terminal execution context inside Mirage: cwd, env, functions, and last exit state."
+icon: computer
+---
+
+A `Session` is the mutable execution context inside a `Workspace`. The [Arm](/home/design/arm) is shared. A session is the posture the Arm holds for one agent as it runs commands.
+
+In Mirage, a session has two parallel pieces:
+
+- mutable in-memory execution state such as cwd, env, functions, and exit code
+- a read-only observer stream at `/.sessions/<utc-yyyy-mm-dd>/<session_id>.jsonl` that records what the session did
+
+## What A Session Stores
+
+| Field | Meaning |
+| ----- | ------- |
+| `session_id` | Stable identifier for the session |
+| `cwd` | Current working directory |
+| `env` | Environment variables |
+| `functions` | Shell functions defined in that session |
+| `last_exit_code` | Exit status from the previous command |
+| `created_at` | Creation timestamp |
+
+## Unix Analogy
+
+| Unix shell session | Mirage Session |
+| ------------------ | -------------- |
+| Current directory | `Session.cwd` |
+| Environment vars | `Session.env` |
+| Shell functions | `Session.functions` |
+| `$?` | `Session.last_exit_code` |
+| Open a terminal | `ws.create_session()` |
+| Reattach to a terminal | `ws.get_session(id)` |
+
+## What A Session Does Not Own
+
+A session does not own mounts, cache, or command registrations. It also does not execute commands by itself.
+
+The `Workspace` owns the execution machinery. The session just carries the mutable state that execution reads and updates.
+
+## Isolation And Sharing
+
+Sessions are isolated by default:
+
+- one session can `cd /data` without changing another session
+- one session can `export DEBUG=1` without leaking that value elsewhere
+- one session can define shell functions that do not appear in another session
+
+Sessions are also identity-light. They are keyed by `session_id`, not permanently bound to one agent identity. If two agents intentionally use the same session id, they share the same cwd, env, and shell state.
+
+## Default Session
+
+Every `Workspace` starts with a default session, so single-agent use cases work without any setup:
+
+```python
+ws = Workspace({"/data": RAMResource()}, mode=MountMode.WRITE)
+await ws.execute("pwd")
+```
+
+## Lifecycle
+
+```python
+session = ws.create_session("agent-1")
+session = ws.get_session("agent-1")
+sessions = ws.list_sessions()
+await ws.close_session("agent-1")
+```
+
+## Observer Stream
+
+Each session is mirrored into a JSONL file at:
+
+```text
+/.sessions/<utc-yyyy-mm-dd>/<session_id>.jsonl
+```
+
+The date folder reflects the UTC date when each line was appended, so a session
+that crosses midnight UTC writes into two folders. Mirage appends both
+command-level and operation-level records there as the session runs. The
+session id appears in two places:
+
+- in the filename, such as `/.sessions/2026-04-29/default.jsonl`
+- in each JSONL record under the `session` field
+
+This observer stream is not the session's mutable state. It is the execution
+trace attached to that session.
+
+## Related
+
+- [Workspace](/home/design/workspace) owns session lifecycle.
+- [Shell](/home/design/pipeline) reads and updates session state during execution.

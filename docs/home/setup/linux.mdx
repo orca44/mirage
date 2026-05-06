@@ -1,0 +1,44 @@
+---
+title: Linux
+icon: linux
+description: Set up FUSE on Linux for MIRAGE.
+---
+
+## FUSE Setup
+
+FUSE mode mounts virtual filesystems as real directories,
+allowing any tool (not just MIRAGE commands) to access mounted data.
+
+### Install FUSE
+
+<Tabs>
+  <Tab title="Ubuntu / Debian">
+    ```bash
+    sudo apt-get install fuse3 libfuse3-dev
+    ```
+  </Tab>
+  <Tab title="Fedora / RHEL">
+    ```bash
+    sudo dnf install fuse3 fuse3-devel
+    ```
+  </Tab>
+  <Tab title="Arch Linux">
+    ```bash
+    sudo pacman -S fuse3
+    ```
+  </Tab>
+</Tabs>
+
+### Allow User Mounts
+
+Edit `/etc/fuse.conf` and uncomment `user_allow_other`:
+
+```bash
+sudo sed -i 's/#user_allow_other/user_allow_other/' /etc/fuse.conf
+```
+
+### Verify
+
+```bash
+fusermount3 --version
+```

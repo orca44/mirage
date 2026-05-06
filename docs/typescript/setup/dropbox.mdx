@@ -1,0 +1,137 @@
+---
+title: Dropbox
+icon: dropbox
+description: Mount Dropbox as a MIRAGE resource from Node or the browser via OAuth2.
+---
+
+Mirage ships `DropboxResource` in **two runtimes**:
+
+- `@struktoai/mirage-node`, uses `client_id` + `client_secret` + long-lived refresh token to fetch
+  short-lived access tokens server-side.
+- `@struktoai/mirage-browser`, supports the same refresh token via PKCE (no client secret in the bundle).
+
+Both runtimes hit the same [Dropbox v2 HTTP API](https://www.dropbox.com/developers/documentation/http/documentation):
+`/2/files/list_folder` for directories, `/2/files/download` for content, and `/2/files/search_v2`
+for search. Credentials are obtained the same way in both runtimes, see
+[Dropbox Credentials](/home/setup/dropbox).
+
+## Node (server-side)
+
+```bash
+pnpm add @struktoai/mirage-node
+```
+
+```ts
+import { DropboxResource, MountMode, Workspace } from '@struktoai/mirage-node'
+
+const dropbox = new DropboxResource({
+  clientId: process.env.DROPBOX_APP_KEY!,
+  clientSecret: process.env.DROPBOX_APP_SECRET!,
+  refreshToken: process.env.DROPBOX_REFRESH_TOKEN!,
+})
+
+const ws = new Workspace({ '/dropbox': dropbox }, { mode: MountMode.READ })
+const res = await ws.execute('ls /dropbox/')
+console.log(res.stdoutText)
+```
+
+The `DropboxTokenManager` caches the access token in memory and refreshes it ~5 minutes before
+expiry, so cold-start API calls don't pay the refresh round-trip.
+
+## Browser (PKCE, no client secret)
+
+```bash
+pnpm add @struktoai/mirage-browser
+```
+
+```ts
+import { DropboxResource, MountMode, Workspace } from '@struktoai/mirage-browser'
+
+// Refresh token obtained via the PKCE flow, see examples/typescript/browser/src/dropbox_pkce.ts.
+const dropbox = new DropboxResource({
+  clientId: import.meta.env.VITE_DROPBOX_APP_KEY,
+  refreshToken: refreshTokenFromLocalStorage,
+})
+
+const ws = new Workspace({ '/dropbox': dropbox }, { mode: MountMode.READ })
+await ws.execute('ls /dropbox/')
+```
+
+Set the redirect URI on your Dropbox app's **Settings** tab to your dev/prod origin
+(e.g. `http://localhost:5173/dropbox_pkce.html`). The bundled
+[`examples/typescript/browser/src/dropbox_pkce.ts`](https://github.com/strukto-ai/mirage/blob/main/examples/typescript/browser/src/dropbox_pkce.ts)
+runs the full PKCE dance end-to-end and persists the refresh token to `localStorage`.
+
+## VFS mode (`patchNodeFs`)
+
+Mirage exposes a `patchNodeFs(workspace)` shim that routes `fs.promises.*` calls under a mount
+through the workspace, so any library that uses Node's `fs` API can read directly from Dropbox
+without code changes.
+
+```ts
+import { createRequire } from 'node:module'
+import { DropboxResource, MountMode, patchNodeFs, Workspace } from '@struktoai/mirage-node'
+
+const require = createRequire(import.meta.url)
+const fs = require('fs') as typeof import('fs')
+
+const ws = new Workspace({ '/dropbox': dropbox }, { mode: MountMode.READ })
+const restore = patchNodeFs(ws)
+
+const entries = await fs.promises.readdir('/dropbox/')
+const stat = await fs.promises.stat('/dropbox/data')
+const bytes = await fs.promises.readFile('/dropbox/data/example.parquet')
+
+restore()
+```
+
+Only `fs.promises.*` (the async API) is patched. Sync forms like `fs.statSync` and
+`fs.readFileSync` aren't supported because remote reads can't block the event loop.
+
+## FUSE mode
+
+For tools that need a real filesystem path (CLI tools, editors, system utilities), mount the
+workspace under FUSE:
+
+```ts
+import { DropboxResource, FuseManager, MountMode, Workspace } from '@struktoai/mirage-node'
+
+const ws = new Workspace({ '/dropbox': dropbox }, { mode: MountMode.READ })
+const fm = new FuseManager()
+const mp = await fm.setup(ws)
+
+// Now `${mp}/dropbox/` is a real filesystem path:
+//   ls ${mp}/dropbox/
+//   find ${mp}/dropbox -name '*.parquet'
+//   cat ${mp}/dropbox/data/example.json | jq .
+
+await fm.close(ws)
+```
+
+Requires [macFUSE](https://osxfuse.github.io/) on macOS or libfuse on Linux. See
+[FUSE setup](/home/setup/macos).
+
+## Available commands
+
+`DropboxResource` ships the same shell command set as the GDrive resource:
+
+- **Filesystem**: `ls`, `cat`, `head`, `tail`, `nl`, `wc`, `stat`, `find`, `tree`, `du`, `file`,
+  `realpath`, `basename`, `dirname`
+- **Search/text**: `grep`, `rg`, `awk`, `sed`, `sort`, `uniq`, `cut`, `diff`, `cmp`, `jq`
+- **Encoding**: `base64`
+- **Format-aware**: `cat_parquet`, `cat_feather`, `cat_hdf5`, `head_parquet`, `head_feather`,
+  `head_hdf5`, `cut_*`, `grep_*`, `ls_*`, `stat_*`, `tail_*`, `wc_*`, `file_*` for `.parquet`,
+  `.feather`, `.hdf5`/`.h5`, `.orc` files
+
+The format-aware commands transparently decode binary tabular files, so
+`cat /dropbox/data/example.parquet` returns a column preview instead of binary garbage.
+
+## Examples
+
+End-to-end runnable scripts are in
+[`examples/typescript/dropbox/`](https://github.com/strukto-ai/mirage/tree/main/examples/typescript/dropbox):
+
+- [`dropbox.ts`](https://github.com/strukto-ai/mirage/blob/main/examples/typescript/dropbox/dropbox.ts), `Workspace.execute('ls/stat/cat/tree …')` shell demo
+- [`dropbox_parquet.ts`](https://github.com/strukto-ai/mirage/blob/main/examples/typescript/dropbox/dropbox_parquet.ts), parquet preview through `cat`
+- [`dropbox_vfs.ts`](https://github.com/strukto-ai/mirage/blob/main/examples/typescript/dropbox/dropbox_vfs.ts), `patchNodeFs` + native `fs.promises.*` calls
+- [`dropbox_fuse.ts`](https://github.com/strukto-ai/mirage/blob/main/examples/typescript/dropbox/dropbox_fuse.ts), FUSE mount with shell access in another terminal

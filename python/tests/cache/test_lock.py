@@ -1,0 +1,92 @@
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
+import asyncio
+
+import pytest
+
+from mirage.cache.lock import KeyLockMixin
+
+
+class _Store(KeyLockMixin):
+    pass
+
+
+@pytest.mark.asyncio
+async def test_different_keys_return_different_locks():
+    store = _Store()
+    assert store._lock_for("/a") is not store._lock_for("/b")
+
+
+@pytest.mark.asyncio
+async def test_same_key_returns_same_lock():
+    store = _Store()
+    assert store._lock_for("/a") is store._lock_for("/a")
+
+
+@pytest.mark.asyncio
+async def test_discard_lock_removes_key():
+    store = _Store()
+    store._lock_for("/a")
+    store._discard_lock("/a")
+    assert "/a" not in store._key_locks
+
+
+@pytest.mark.asyncio
+async def test_discard_lock_missing_key_no_error():
+    store = _Store()
+    store._discard_lock("/nope")
+
+
+@pytest.mark.asyncio
+async def test_clear_locks_removes_all():
+    store = _Store()
+    store._lock_for("/a")
+    store._lock_for("/b")
+    store._clear_locks()
+    assert len(store._key_locks) == 0
+
+
+@pytest.mark.asyncio
+async def test_concurrent_different_keys_no_block():
+    store = _Store()
+    order = []
+
+    async def acquire(key, label):
+        async with store._lock_for(key):
+            order.append(f"{label}_start")
+            await asyncio.sleep(0)
+            order.append(f"{label}_end")
+
+    await asyncio.gather(acquire("/a", "a"), acquire("/b", "b"))
+    assert "a_start" in order
+    assert "b_start" in order
+
+
+@pytest.mark.asyncio
+async def test_same_key_serialized():
+    store = _Store()
+    order = []
+
+    async def acquire(label):
+        async with store._lock_for("/same"):
+            order.append(f"{label}_start")
+            await asyncio.sleep(0.01)
+            order.append(f"{label}_end")
+
+    await asyncio.gather(acquire("first"), acquire("second"))
+    assert order[0] == "first_start"
+    assert order[1] == "first_end"
+    assert order[2] == "second_start"
+    assert order[3] == "second_end"

@@ -1,0 +1,77 @@
+---
+title: Installation
+description: Install Mirage for Python with mirage-ai from PyPI or uv, then add extras for S3, Redis, FUSE, Google Workspace, and other resources.
+keywords: ["mirage-ai", "Python virtual filesystem", "AI agents", "S3 filesystem", "FUSE", "agent tools"]
+icon: download
+---
+
+## Quick Install
+
+Install the base package into your project:
+
+```bash
+uv add mirage-ai
+```
+
+This is enough to start with local workflows such as the RAM resource and to understand the Mirage execution model.
+
+If you are not using uv:
+
+```bash
+pip install mirage-ai
+```
+
+## Use Mirage as a CLI
+
+If you only want the `mirage` CLI (not the library), there are two convenient paths.
+
+**One-shot run with `uvx`**, no install, just runs:
+
+```bash
+uvx mirage-ai --help
+uvx mirage-ai workspace create workspace.yaml --id demo
+```
+
+**Persistent install with `uv tool install`**, drops `mirage` on your PATH globally:
+
+```bash
+uv tool install mirage-ai
+mirage --help
+```
+
+To upgrade later:
+
+```bash
+uv tool install --upgrade mirage-ai
+```
+
+## Resource Extras
+
+Install extras when a resource needs optional dependencies:
+
+```bash
+uv add "mirage-ai[s3]"
+uv add "mirage-ai[r2]"
+uv add "mirage-ai[redis]"
+uv add "mirage-ai[fuse]"
+```
+
+Use the resource docs in the Python section when you are ready to connect real systems.
+
+## Install From Source
+
+If you are contributing to Mirage or want the full local development setup:
+
+```bash
+git clone https://github.com/strukto-ai/mirage.git
+cd mirage/python
+uv sync --all-extras --no-extra camel
+```
+
+The `camel` extra conflicts with the `openai` stack, so excluding it keeps everything else installable in one shot.
+
+## Recommended Path
+
+1. Install the base package.
+2. Follow the [Python Quickstart](/python/quickstart) with the RAM resource.
+3. Add the resource extras and follow the [FUSE setup](/python/setup/fuse) if you need to expose mounts as a real filesystem.

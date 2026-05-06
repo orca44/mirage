@@ -1,0 +1,159 @@
+// ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+// ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
+import type { Workspace } from '@struktoai/mirage-core'
+import type {
+  BashOperations,
+  EditOperations,
+  FindOperations,
+  GrepOperations,
+  LsOperations,
+  ReadOperations,
+  WriteOperations,
+} from '@mariozechner/pi-coding-agent'
+import picomatch from 'picomatch'
+
+export interface MirageOperationsBundle {
+  read: ReadOperations
+  write: WriteOperations
+  edit: EditOperations
+  bash: BashOperations
+  grep: GrepOperations
+  find: FindOperations
+  ls: LsOperations
+}
+
+async function ensureParent(ws: Workspace, dir: string): Promise<void> {
+  const norm = dir.replace(/\/+$/, '') || '/'
+  if (norm === '/' || (await ws.fs.exists(norm))) return
+  const parent = norm.substring(0, norm.lastIndexOf('/')) || '/'
+  await ensureParent(ws, parent)
+  try {
+    await ws.fs.mkdir(norm)
+  } catch (err) {
+    if (await ws.fs.isDir(norm)) return
+    throw err
+  }
+}
+
+interface WalkOptions {
+  ignoreMatchers: ((path: string) => boolean)[]
+  limit: number
+}
+
+async function walkDirectory(
+  ws: Workspace,
+  dir: string,
+  cwdPrefix: string,
+  matcher: (relativePath: string) => boolean,
+  opts: WalkOptions,
+  results: string[],
+): Promise<void> {
+  if (results.length >= opts.limit) return
+  let entries: string[]
+  try {
+    entries = await ws.fs.readdir(dir)
+  } catch {
+    return
+  }
+  for (const full of entries) {
+    if (results.length >= opts.limit) return
+    const rel = full.startsWith(cwdPrefix) ? full.slice(cwdPrefix.length) : full
+    if (opts.ignoreMatchers.some((m) => m(rel))) continue
+    const isDir = await ws.fs.isDir(full)
+    if (matcher(rel)) results.push(full)
+    if (isDir) await walkDirectory(ws, full, cwdPrefix, matcher, opts, results)
+  }
+}
+
+export function mirageOperations(ws: Workspace): MirageOperationsBundle {
+  const read: ReadOperations = {
+    readFile: async (absolutePath: string) => {
+      const bytes = await ws.fs.readFile(absolutePath, { raw: true })
+      return Buffer.from(bytes)
+    },
+    access: async (absolutePath: string) => {
+      await ws.fs.stat(absolutePath)
+    },
+  }
+
+  const write: WriteOperations = {
+    writeFile: async (absolutePath: string, content: string) => {
+      await ws.fs.writeFile(absolutePath, content)
+    },
+    mkdir: async (dir: string) => {
+      await ensureParent(ws, dir)
+      if (!(await ws.fs.exists(dir))) {
+        await ws.fs.mkdir(dir)
+      }
+    },
+  }
+
+  const edit: EditOperations = {
+    readFile: read.readFile,
+    writeFile: write.writeFile,
+    access: read.access,
+  }
+
+  const bash: BashOperations = {
+    exec: async (command, _cwd, options) => {
+      const result = await ws.execute(command)
+      const combined = result.stdoutText + result.stderrText
+      if (combined.length > 0) {
+        options.onData(Buffer.from(combined))
+      }
+      return { exitCode: result.exitCode }
+    },
+  }
+
+  const grep: GrepOperations = {
+    isDirectory: async (absolutePath: string) => ws.fs.isDir(absolutePath),
+    readFile: async (absolutePath: string) => ws.fs.readFileText(absolutePath),
+  }
+
+  const find: FindOperations = {
+    exists: async (absolutePath: string) => ws.fs.exists(absolutePath),
+    glob: async (pattern, cwd, options) => {
+      const matcher = picomatch(pattern, { dot: false })
+      const ignoreMatchers = options.ignore.map((p) => picomatch(p, { dot: false }))
+      const root = cwd.replace(/\/+$/, '') || '/'
+      const cwdPrefix = root === '/' ? '/' : `${root}/`
+      const results: string[] = []
+      await walkDirectory(
+        ws,
+        root,
+        cwdPrefix,
+        matcher,
+        { ignoreMatchers, limit: options.limit },
+        results,
+      )
+      return results
+    },
+  }
+
+  const ls: LsOperations = {
+    exists: async (absolutePath: string) => ws.fs.exists(absolutePath),
+    stat: async (absolutePath: string) => {
+      const isDir = await ws.fs.isDir(absolutePath)
+      return { isDirectory: () => isDir }
+    },
+    readdir: async (absolutePath: string) => {
+      const entries = await ws.fs.readdir(absolutePath)
+      const prefix = absolutePath === '/' ? '/' : `${absolutePath.replace(/\/+$/, '')}/`
+      return entries.map((e) => (e.startsWith(prefix) ? e.slice(prefix.length) : e))
+    },
+  }
+
+  return { read, write, edit, bash, grep, find, ls }
+}

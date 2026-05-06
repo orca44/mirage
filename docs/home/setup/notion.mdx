@@ -1,0 +1,37 @@
+---
+title: Notion
+icon: book
+description: Set up a Notion internal integration for the Notion resource.
+---
+
+## Credentials
+
+### 1. Create an Internal Integration
+
+1. Go to [My Integrations](https://www.notion.com/my-integrations)
+1. Click **+ New integration**
+1. Name it (e.g. "mirage"), select your workspace
+1. Under **Content Capabilities**, enable:
+   - **Read content** (required)
+   - **Update content** (for write commands)
+   - **Insert content** (for `notion-comment-add`)
+1. Click **Save changes**
+1. Copy the **Internal Integration Secret** (starts with `ntn_`)
+
+### 2. Share Pages with the Integration
+
+The integration has no access by default. You must share each page:
+
+1. Open a Notion page you want to mount
+1. Click `...` (top-right) -> **+ Add connections**
+1. Search for your integration name and select it
+1. Child pages inherit the connection - share a top-level page to expose its entire subtree
+
+### 3. Set Environment Variables
+
+```bash
+# .env.development
+NOTION_API_KEY=ntn_xxxx...
+```
+
+For Python configuration, see the [Python Notion Setup](/python/setup/notion) guide.

@@ -1,0 +1,171 @@
+// ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+// ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
+import type { DiskAccessor } from '../../accessor/disk.ts'
+import { readdir, stat } from 'node:fs/promises'
+import path from 'node:path'
+import type { PathSpec } from '@struktoai/mirage-core'
+import { norm, resolveSafe } from './utils.ts'
+
+export interface FindOptions {
+  name?: string | null
+  type?: 'f' | 'd' | null
+  minSize?: number | null
+  maxSize?: number | null
+  maxDepth?: number | null
+  minDepth?: number | null
+  nameExclude?: string | null
+  orNames?: string[] | null
+  iname?: string | null
+  pathPattern?: string | null
+  mtimeMin?: number | null
+  mtimeMax?: number | null
+}
+
+function fnmatch(name: string, pattern: string): boolean {
+  let re = '^'
+  for (const ch of pattern) {
+    if (ch === '*') re += '.*'
+    else if (ch === '?') re += '.'
+    else if (/[.+^${}()|[\]\\]/.test(ch)) re += '\\' + ch
+    else re += ch
+  }
+  re += '$'
+  return new RegExp(re).test(name)
+}
+
+interface WalkCtx {
+  accessor: DiskAccessor
+  base: string
+  baseDepth: number
+  options: FindOptions
+  results: string[]
+}
+
+async function walk(ctx: WalkCtx, full: string, current: string, depth: number): Promise<void> {
+  const opts = ctx.options
+  if (opts.maxDepth !== null && opts.maxDepth !== undefined && depth > opts.maxDepth) return
+  let entries
+  try {
+    entries = await readdir(full, { withFileTypes: true })
+  } catch {
+    return
+  }
+  for (const e of entries) {
+    const kind: 'f' | 'd' = e.isDirectory() ? 'd' : 'f'
+    if (opts.type === 'f' && kind !== 'f') {
+      const childPath = current === '/' ? `/${e.name}` : `${current}/${e.name}`
+      await walk(ctx, path.join(full, e.name), childPath, depth + 1)
+      continue
+    }
+    if (opts.type === 'd' && kind !== 'd') continue
+    const entryPath = current === '/' ? `/${e.name}` : `${current}/${e.name}`
+    const entryName = e.name
+    const entrySlashCount = (entryPath.match(/\//g) ?? []).length
+    const entryDepth = entrySlashCount - ctx.baseDepth
+
+    let accept = true
+    if (opts.orNames !== null && opts.orNames !== undefined && opts.orNames.length > 0) {
+      if (!opts.orNames.some((pat) => fnmatch(entryName, pat))) accept = false
+    } else if (opts.name !== null && opts.name !== undefined) {
+      if (!fnmatch(entryName, opts.name)) accept = false
+    }
+    if (
+      accept &&
+      opts.iname !== null &&
+      opts.iname !== undefined &&
+      !fnmatch(entryName.toLowerCase(), opts.iname.toLowerCase())
+    ) {
+      accept = false
+    }
+    if (
+      accept &&
+      opts.pathPattern !== null &&
+      opts.pathPattern !== undefined &&
+      !fnmatch(entryPath, opts.pathPattern)
+    ) {
+      accept = false
+    }
+    if (
+      accept &&
+      opts.nameExclude !== null &&
+      opts.nameExclude !== undefined &&
+      fnmatch(entryName, opts.nameExclude)
+    ) {
+      accept = false
+    }
+    if (
+      accept &&
+      opts.maxDepth !== null &&
+      opts.maxDepth !== undefined &&
+      entryDepth > opts.maxDepth
+    ) {
+      accept = false
+    }
+    if (
+      accept &&
+      opts.minDepth !== null &&
+      opts.minDepth !== undefined &&
+      entryDepth < opts.minDepth
+    ) {
+      accept = false
+    }
+
+    if (
+      accept &&
+      kind === 'f' &&
+      (opts.minSize !== null ||
+        opts.maxSize !== null ||
+        opts.mtimeMin !== null ||
+        opts.mtimeMax !== null)
+    ) {
+      try {
+        const st = await stat(path.join(full, e.name))
+        if (opts.minSize !== null && opts.minSize !== undefined && st.size < opts.minSize)
+          accept = false
+        if (opts.maxSize !== null && opts.maxSize !== undefined && st.size > opts.maxSize)
+          accept = false
+        if (accept && (opts.mtimeMin !== undefined || opts.mtimeMax !== undefined)) {
+          const mtime = st.mtime.getTime() / 1000
+          if (opts.mtimeMin !== null && opts.mtimeMin !== undefined && mtime < opts.mtimeMin)
+            accept = false
+          if (opts.mtimeMax !== null && opts.mtimeMax !== undefined && mtime > opts.mtimeMax)
+            accept = false
+        }
+      } catch {
+        accept = false
+      }
+    }
+
+    if (accept) ctx.results.push(entryPath)
+
+    if (kind === 'd') {
+      await walk(ctx, path.join(full, e.name), entryPath, depth + 1)
+    }
+  }
+}
+
+export async function find(
+  accessor: DiskAccessor,
+  p: PathSpec,
+  options: FindOptions = {},
+): Promise<string[]> {
+  const virtual = norm(p.stripPrefix)
+  const full = resolveSafe(accessor.root, virtual)
+  const baseDepth = (virtual.match(/\//g) ?? []).length
+  const results: string[] = []
+  await walk({ accessor, base: virtual, baseDepth, options, results }, full, virtual, 0)
+  results.sort()
+  return results
+}

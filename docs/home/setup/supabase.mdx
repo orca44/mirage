@@ -1,0 +1,38 @@
+---
+title: Supabase Storage
+icon: bolt
+description: Set up Supabase Storage credentials for the Supabase resource.
+---
+
+## Credentials
+
+Supabase Storage exposes an S3-compatible API at `https://<project-ref>.storage.supabase.co/storage/v1/s3`, signed with **S3 Access Keys** scoped to a Supabase project (not your `anon` or `service_role` JWT).
+
+### 1. Create an S3 access key
+
+1. Open the [Supabase dashboard](https://supabase.com/dashboard) and pick your project.
+2. **Storage** -> **Settings** -> **S3 Access Keys**.
+3. **New access key** -> scope to the bucket(s) you want Mirage to mount.
+4. Copy the **Access key ID** and **Secret access key**, the secret is shown once.
+
+### 2. Note the project reference and region
+
+- **Project reference** is in the dashboard URL: `https://supabase.com/dashboard/project/<project-ref>`.
+- **Region** is the region you selected when creating the project. Supabase requires a region string for SigV4 signing even though it is metadata only.
+
+### 3. Set Environment Variables
+
+```bash
+# .env.development
+SUPABASE_BUCKET=my-bucket
+SUPABASE_REGION=us-east-1
+SUPABASE_PROJECT_REF=abcdefghijklmnop
+SUPABASE_ACCESS_KEY_ID=...
+SUPABASE_SECRET_ACCESS_KEY=...
+```
+
+<Tip>
+Supabase requires **path-style** S3 URLs. The Mirage resource sets `forcePathStyle: true` automatically when you pass `project_ref`.
+</Tip>
+
+For Python configuration, see the [Python Supabase Resource](/python/resource/supabase) guide. For Node and browser wiring, see the [TypeScript Supabase Setup](/typescript/setup/supabase) guide.

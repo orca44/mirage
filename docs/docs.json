@@ -1,0 +1,438 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "Mirage",
+  "colors": {
+    "primary": "#0C0C0C",
+    "light": "#FAFAFA",
+    "dark": "#000000"
+  },
+  "logo": {
+    "light": "/logo/light.svg",
+    "dark": "/logo/dark.svg"
+  },
+  "favicon": "/favicon.svg",
+  "contextual": {
+    "options": [
+      "copy",
+      "view",
+      "chatgpt",
+      "claude",
+      "perplexity",
+      "mcp",
+      "cursor",
+      "vscode"
+    ]
+  },
+  "seo": {
+    "metatags": {
+      "charset": "UTF-8",
+      "viewport": "width=device-width, initial-scale=1.0",
+      "description": "Mirage gives AI agents one virtual filesystem for S3, Google Drive, Slack, GitHub, Notion, Postgres, and SSH, so shell commands can read, write, and pipe across services.",
+      "keywords": "Mirage, filesystem for AI agents, virtual filesystem, AI agent tools, agent infrastructure, MCP alternative, bash for agents, S3 filesystem, Google Drive filesystem, Slack filesystem, GitHub filesystem, agent sandbox, Strukto",
+      "author": "Strukto",
+      "robots": "index, follow",
+      "googlebot": "index, follow",
+      "canonical": "https://docs.mirage.strukto.ai",
+      "theme-color": "#0C0C0C",
+      "color-scheme": "light dark",
+      "language": "en",
+      "category": "Technology",
+      "target": "developers",
+      "title": "Mirage · Unified Virtual Filesystem for AI Agents | Strukto",
+      "application-name": "Mirage",
+      "apple-mobile-web-app-title": "Mirage",
+      "apple-mobile-web-app-capable": "yes",
+      "apple-mobile-web-app-status-bar-style": "black-translucent",
+      "og:title": "Mirage · Unified Virtual Filesystem for AI Agents | Strukto",
+      "og:type": "website",
+      "og:url": "https://docs.mirage.strukto.ai",
+      "og:image": "https://raw.githubusercontent.com/strukto-ai/mirage/main/assets/mirage-og-light.png",
+      "og:image:alt": "Mirage virtual filesystem for AI agents",
+      "og:description": "Mount S3, Google Drive, Slack, GitHub, Notion, Postgres, SSH, and more behind one filesystem. Agents read, write, and pipe across services with shell commands.",
+      "og:site_name": "Mirage",
+      "og:locale": "en_US",
+      "twitter:card": "summary_large_image",
+      "twitter:site": "@struktoai",
+      "twitter:creator": "@struktoai",
+      "twitter:title": "Mirage · Unified Virtual Filesystem for AI Agents | Strukto",
+      "twitter:description": "Mount S3, Google Drive, Slack, GitHub, Notion, Postgres, SSH, and more behind one filesystem. Agents read, write, and pipe across services with familiar shell commands.",
+      "twitter:image": "https://raw.githubusercontent.com/strukto-ai/mirage/main/assets/mirage-og-light.png",
+      "twitter:image:alt": "Mirage · Unified Virtual Filesystem for AI Agents | Strukto"
+    }
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Home",
+        "icon": "/images/mirage-icon-light.svg",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "home/introduction",
+              "home/install",
+              "home/cli"
+            ]
+          },
+          {
+            "group": "Learn",
+            "pages": [
+              "home/architecture",
+              "home/resource-matrix"
+            ]
+          },
+          {
+            "group": "Help",
+            "pages": [
+              "home/troubleshooting"
+            ]
+          },
+          {
+            "group": "Setup",
+            "pages": [
+              {
+                "group": "FUSE",
+                "icon": "hard-drive",
+                "pages": [
+                  "home/setup/macos",
+                  "home/setup/linux"
+                ]
+              },
+              {
+                "group": "Object Storage",
+                "icon": "cloud",
+                "pages": [
+                  "home/setup/s3",
+                  "home/setup/r2",
+                  "home/setup/gcs",
+                  "home/setup/oci",
+                  "home/setup/supabase"
+                ]
+              },
+              {
+                "group": "Google Workspace",
+                "icon": "google",
+                "pages": [
+                  "home/setup/google"
+                ]
+              },
+              {
+                "group": "Cloud Files",
+                "icon": "folder-open",
+                "pages": [
+                  "home/setup/dropbox",
+                  "home/setup/box"
+                ]
+              },
+              {
+                "group": "Code & DevOps",
+                "icon": "code",
+                "pages": [
+                  "home/setup/github",
+                  "home/setup/github_ci",
+                  "home/setup/linear",
+                  "home/setup/langfuse"
+                ]
+              },
+              {
+                "group": "Messaging",
+                "icon": "comments",
+                "pages": [
+                  "home/setup/slack",
+                  "home/setup/discord",
+                  "home/setup/telegram",
+                  "home/setup/email"
+                ]
+              },
+              {
+                "group": "Database",
+                "icon": "database",
+                "pages": [
+                  "home/setup/mongodb",
+                  "home/setup/postgres"
+                ]
+              },
+              {
+                "group": "Notes",
+                "icon": "book",
+                "pages": [
+                  "home/setup/notion"
+                ]
+              },
+              {
+                "group": "Others",
+                "icon": "ellipsis",
+                "pages": [
+                  "home/setup/trello",
+                  "home/setup/paperclip",
+                  "home/setup/sscholar"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Python",
+        "icon": "/images/python-logo.svg",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "python/install",
+              "python/quickstart",
+              "python/setup/fuse"
+            ]
+          },
+          {
+            "group": "Agents",
+            "icon": "robot",
+            "pages": [
+              "python/agents/index",
+              "python/agents/openai-agents",
+              "python/agents/langchain",
+              "python/agents/openhands",
+              "python/agents/pydantic-ai",
+              "python/agents/camel",
+              "python/agents/claude-code",
+              "python/agents/codex"
+            ]
+          },
+          {
+            "group": "Resources",
+            "pages": [
+              "python/resource/index",
+              {
+                "group": "Infrastructure",
+                "icon": "server",
+                "pages": [
+                  "python/resource/disk",
+                  "python/resource/ram",
+                  "python/resource/redis",
+                  "python/resource/ssh"
+                ]
+              },
+              {
+                "group": "Object Storage",
+                "icon": "cloud",
+                "pages": [
+                  "python/resource/s3",
+                  "python/resource/r2",
+                  "python/resource/gcs",
+                  "python/resource/supabase",
+                  "python/resource/oci"
+                ]
+              },
+              {
+                "group": "Google Workspace",
+                "icon": "google",
+                "pages": [
+                  "python/resource/gmail",
+                  "python/resource/gdrive",
+                  "python/resource/gdocs",
+                  "python/resource/gsheets",
+                  "python/resource/gslides"
+                ]
+              },
+              {
+                "group": "Code & DevOps",
+                "icon": "code",
+                "pages": [
+                  "python/resource/github",
+                  "python/resource/github_ci",
+                  "python/resource/linear",
+                  "python/resource/langfuse"
+                ]
+              },
+              {
+                "group": "Messaging",
+                "icon": "comments",
+                "pages": [
+                  "python/resource/slack",
+                  "python/resource/discord",
+                  "python/resource/telegram",
+                  "python/resource/email"
+                ]
+              },
+              {
+                "group": "Database",
+                "icon": "database",
+                "pages": [
+                  "python/resource/mongodb",
+                  "python/resource/postgres"
+                ]
+              },
+              {
+                "group": "Notes",
+                "icon": "book",
+                "pages": [
+                  "python/resource/notion"
+                ]
+              },
+              {
+                "group": "Others",
+                "icon": "ellipsis",
+                "pages": [
+                  "python/resource/trello",
+                  "python/resource/paperclip"
+                ]
+              },
+              "python/resource/new"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "TS",
+        "icon": "/images/typescript-logo.svg",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "typescript/install",
+              "typescript/quickstart",
+              "typescript/server-and-cli",
+              "typescript/setup/fuse",
+              "typescript/python",
+              "typescript/python-fs",
+              "typescript/limitations"
+            ]
+          },
+          {
+            "group": "Agents",
+            "icon": "robot",
+            "pages": [
+              "typescript/agents/index",
+              "typescript/agents/openai",
+              "typescript/agents/langchain",
+              "typescript/agents/pi",
+              "typescript/agents/vercel",
+              "typescript/agents/mastra",
+              "typescript/agents/claude-code",
+              "typescript/agents/codex"
+            ]
+          },
+          {
+            "group": "Resources",
+            "pages": [
+              {
+                "group": "Infrastructure",
+                "icon": "server",
+                "pages": [
+                  "typescript/setup/disk",
+                  "typescript/setup/opfs",
+                  "typescript/setup/redis",
+                  "typescript/setup/ssh"
+                ]
+              },
+              {
+                "group": "Object Storage",
+                "icon": "cloud",
+                "pages": [
+                  "typescript/setup/s3",
+                  "typescript/setup/r2",
+                  "typescript/setup/gcs",
+                  "typescript/setup/oci",
+                  "typescript/setup/supabase"
+                ]
+              },
+              {
+                "group": "Google Workspace",
+                "icon": "google",
+                "pages": [
+                  "typescript/setup/gmail",
+                  "typescript/setup/gdrive",
+                  "typescript/setup/gdocs",
+                  "typescript/setup/gsheets",
+                  "typescript/setup/gslides"
+                ]
+              },
+              {
+                "group": "Cloud Files",
+                "icon": "folder-open",
+                "pages": [
+                  "typescript/setup/dropbox",
+                  "typescript/setup/box"
+                ]
+              },
+              {
+                "group": "Code & DevOps",
+                "icon": "code",
+                "pages": [
+                  "typescript/setup/github",
+                  "typescript/setup/github_ci",
+                  "typescript/setup/linear",
+                  "typescript/setup/langfuse"
+                ]
+              },
+              {
+                "group": "Messaging",
+                "icon": "comments",
+                "pages": [
+                  "typescript/slack",
+                  "typescript/discord",
+                  "typescript/setup/email"
+                ]
+              },
+              {
+                "group": "Database",
+                "icon": "database",
+                "pages": [
+                  "typescript/setup/mongodb",
+                  "typescript/setup/postgres"
+                ]
+              },
+              {
+                "group": "Notes",
+                "icon": "book",
+                "pages": [
+                  "typescript/setup/notion"
+                ]
+              },
+              {
+                "group": "Others",
+                "icon": "ellipsis",
+                "pages": [
+                  "typescript/setup/trello",
+                  "typescript/setup/sscholar",
+                  "typescript/setup/posthog",
+                  "typescript/setup/vercel"
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "mirage",
+        "icon": "globe",
+        "href": "https://www.strukto.ai/mirage"
+      },
+      {
+        "label": "Discord",
+        "icon": "discord",
+        "href": "https://discord.gg/u8BPQ65KsS"
+      },
+      {
+        "label": "",
+        "icon": "x-twitter",
+        "href": "https://x.com/struktoai"
+      },
+      {
+        "label": "strukto-ai/mirage",
+      "icon": "github",
+        "href": "https://github.com/strukto-ai/mirage"
+      }
+    ]
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/strukto-ai/mirage"
+    }
+  }
+}

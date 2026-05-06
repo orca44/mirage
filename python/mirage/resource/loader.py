@@ -1,0 +1,56 @@
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
+import importlib
+import importlib.util
+from typing import Any
+
+
+def load_backend_class(spec: str) -> type[Any]:
+    """Load a backend class from a spec string.
+
+    Supports two formats (auto-detected):
+    - Script file: ``"./my_backend.py:MyClass"``
+    - Module dotpath: ``"mypackage.backends:MyClass"``
+
+    Args:
+        spec (str): ``"source:class_name"`` where source is a file path
+            or module dotpath.
+
+    Returns:
+        type: The loaded class.
+    """
+    if ":" not in spec:
+        raise ValueError(
+            f"invalid backend spec {spec!r}, expected 'source:ClassName'")
+
+    source, class_name = spec.rsplit(":", 1)
+
+    if "/" in source or source.endswith(".py"):
+        module_spec = importlib.util.spec_from_file_location(
+            "_mirage_user_backend", source)
+        if module_spec is None or module_spec.loader is None:
+            raise ValueError(f"cannot load script {source!r}")
+        module = importlib.util.module_from_spec(module_spec)
+        try:
+            module_spec.loader.exec_module(module)
+        except FileNotFoundError:
+            raise ValueError(f"cannot load script {source!r}")
+    else:
+        module = importlib.import_module(source)
+
+    if not hasattr(module, class_name):
+        raise ValueError(f"{class_name!r} not found in {source!r}")
+
+    return getattr(module, class_name)

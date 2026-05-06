@@ -1,0 +1,106 @@
+---
+title: GCS
+icon: google
+---
+The GCS resource mounts a Google Cloud Storage bucket as a virtual filesystem.
+It uses GCS's S3-compatible XML API via HMAC keys, inheriting all S3 resource
+capabilities.
+
+For credential setup, see [GCS Setup](/python/setup/gcs).
+
+## Config
+
+```python
+import os
+
+from mirage import MountMode, Workspace
+from mirage.resource.gcs import GCSConfig, GCSResource
+
+config = GCSConfig(
+    bucket=os.environ["GCS_BUCKET"],
+    access_key_id=os.environ["GCS_ACCESS_KEY_ID"],
+    secret_access_key=os.environ["GCS_SECRET_ACCESS_KEY"],
+)
+resource = GCSResource(config)
+ws = Workspace({"/gcs": resource}, mode=MountMode.READ)
+```
+
+## Filesystem Layout
+
+The GCS resource maps object keys to virtual paths under the mount prefix,
+identical to the S3 resource.
+
+For example, if bucket `mirage-ai` contains:
+
+```text
+data/example.json
+data/example.parquet
+data/example.jsonl
+```
+
+Then mounting at `/gcs/` exposes:
+
+```text
+/gcs/
+  data/
+    example.json
+    example.parquet
+    example.jsonl
+```
+
+Path mapping: virtual `/gcs/data/example.json` maps to GCS key `data/example.json`.
+
+## Cache
+
+Uses `IndexCacheStore` with 10-minute TTL, same as S3. Directory listings
+are cached to reduce API calls.
+
+## Example
+
+```python
+import asyncio
+import os
+
+from dotenv import load_dotenv
+
+from mirage import MountMode, Workspace
+from mirage.resource.gcs import GCSConfig, GCSResource
+
+load_dotenv(".env.development")
+
+config = GCSConfig(
+    bucket=os.environ["GCS_BUCKET"],
+    access_key_id=os.environ["GCS_ACCESS_KEY_ID"],
+    secret_access_key=os.environ["GCS_SECRET_ACCESS_KEY"],
+)
+resource = GCSResource(config)
+
+
+async def main():
+    ws = Workspace({"/gcs/": resource}, mode=MountMode.READ)
+
+    r = await ws.execute("ls /gcs/")
+    print(await r.stdout_str())
+
+    r = await ws.execute("ls /gcs/data/")
+    print(await r.stdout_str())
+
+    r = await ws.execute("cat /gcs/data/example.json | head -n 10")
+    print(await r.stdout_str())
+
+    r = await ws.execute("tree /gcs/")
+    print(await r.stdout_str())
+
+    r = await ws.execute("stat /gcs/data/example.json")
+    print(await r.stdout_str())
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+## Shell Commands
+
+The GCS resource inherits all S3 shell commands. See `docs/resource/s3.md`
+for the full command reference including read, text processing, file operations,
+compression, encoding, and data format support (Parquet, Feather, ORC, HDF5).

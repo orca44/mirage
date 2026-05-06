@@ -1,0 +1,37 @@
+// ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+// ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
+export interface TrelloConfig {
+  apiKey: string
+  apiToken: string
+  workspaceId?: string
+  boardIds?: readonly string[]
+  baseUrl?: string
+}
+
+export interface TrelloConfigRedacted {
+  apiKey: '<REDACTED>'
+  apiToken: '<REDACTED>'
+  workspaceId?: string
+  boardIds?: readonly string[]
+  baseUrl?: string
+}
+
+export function redactTrelloConfig(config: TrelloConfig): TrelloConfigRedacted {
+  const out: TrelloConfigRedacted = { apiKey: '<REDACTED>', apiToken: '<REDACTED>' }
+  if (config.workspaceId !== undefined) out.workspaceId = config.workspaceId
+  if (config.boardIds !== undefined) out.boardIds = config.boardIds
+  if (config.baseUrl !== undefined) out.baseUrl = config.baseUrl
+  return out
+}

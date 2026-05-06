@@ -1,0 +1,206 @@
+// ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+// ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
+import { asyncChain, closeQuietly, mergeStdoutStderr } from '../../io/stream.ts'
+import type { ByteSource } from '../../io/types.ts'
+import { IOResult, materialize } from '../../io/types.ts'
+import { applyBarrier, BarrierPolicy } from '../../shell/barrier.ts'
+import type { CallStack } from '../../shell/call_stack.ts'
+import { NodeType as NT } from '../../shell/types.ts'
+import type { Session } from '../session/session.ts'
+import type { TSNodeLike } from '../expand/variable.ts'
+import { ExecutionNode } from '../types.ts'
+import type { ExecuteNodeFn } from './jobs.ts'
+
+type Result = [ByteSource | null, IOResult, ExecutionNode]
+
+export async function handlePipe(
+  executeNode: ExecuteNodeFn,
+  commands: readonly TSNodeLike[],
+  stderrFlags: readonly boolean[],
+  session: Session,
+  stdin: ByteSource | null = null,
+  callStack: CallStack | null = null,
+): Promise<Result> {
+  let currentStdin: ByteSource | null = stdin
+  let lastStdout: ByteSource | null = null
+  const childNodes: ExecutionNode[] = []
+  const ios: IOResult[] = []
+  const intermediate: ByteSource[] = []
+
+  try {
+    for (let i = 0; i < commands.length; i++) {
+      const cmd = commands[i]
+      if (cmd === undefined) continue
+      const [stdout, io, childExec] = await executeNode(cmd, session, currentStdin, callStack)
+      ios.push(io)
+      childNodes.push(childExec)
+
+      if (i < commands.length - 1) {
+        const pipeStderr = i < stderrFlags.length && stderrFlags[i] === true
+        const piped = pipeStderr ? mergeStdoutStderr(stdout, io) : stdout
+        currentStdin = piped ?? new Uint8Array()
+        if (!(currentStdin instanceof Uint8Array)) {
+          intermediate.push(currentStdin)
+        }
+      }
+      lastStdout = stdout
+    }
+
+    if (lastStdout !== null && !(lastStdout instanceof Uint8Array)) {
+      lastStdout = await materialize(lastStdout)
+    }
+  } finally {
+    for (const s of intermediate) await closeQuietly(s)
+  }
+
+  const lastIo = ios[ios.length - 1] ?? new IOResult()
+  lastIo.syncExitCode()
+  const mergedStderrParts: Uint8Array[] = []
+  const mergedReads: Record<string, ByteSource> = {}
+  const mergedWrites: Record<string, ByteSource> = {}
+  const mergedCache: string[] = []
+
+  for (let i = 0; i < ios.length; i++) {
+    const io = ios[i]
+    const child = childNodes[i]
+    if (io === undefined || child === undefined) continue
+    io.syncExitCode()
+    child.exitCode = io.exitCode
+    const stderrBytes = await materialize(io.stderr)
+    if (stderrBytes.byteLength > 0) mergedStderrParts.push(stderrBytes)
+    Object.assign(mergedReads, io.reads)
+    Object.assign(mergedWrites, io.writes)
+    mergedCache.push(...io.cache)
+  }
+
+  if (mergedStderrParts.length > 0) {
+    lastIo.stderr = concat(mergedStderrParts)
+  }
+  lastIo.reads = mergedReads
+  lastIo.writes = mergedWrites
+  lastIo.cache = mergedCache
+
+  const execNode = new ExecutionNode({
+    op: '|',
+    exitCode: lastIo.exitCode,
+    children: childNodes,
+  })
+  return [lastStdout, lastIo, execNode]
+}
+
+export async function handleConnection(
+  executeNode: ExecuteNodeFn,
+  left: TSNodeLike,
+  op: string | null,
+  right: TSNodeLike,
+  session: Session,
+  stdin: ByteSource | null = null,
+  callStack: CallStack | null = null,
+): Promise<Result> {
+  const [leftStdout, leftIo, leftExec] = await executeNode(left, session, stdin, callStack)
+  const children = [leftExec]
+
+  if (op === NT.AND) {
+    const leftBytes = await applyBarrier(leftStdout, leftIo, BarrierPolicy.VALUE)
+    session.lastExitCode = leftIo.exitCode
+    if (leftIo.exitCode !== 0) {
+      return [
+        leftBytes,
+        leftIo,
+        new ExecutionNode({ op: '&&', exitCode: leftIo.exitCode, children }),
+      ]
+    }
+    const [rightStdout, rightIo, rightExec] = await executeNode(right, session, stdin, callStack)
+    children.push(rightExec)
+    const rightBytes = await materialize(rightStdout)
+    const merged = await leftIo.merge(rightIo)
+    const combined = asyncChain(leftBytes, rightBytes)
+    return [combined, merged, new ExecutionNode({ op: '&&', exitCode: merged.exitCode, children })]
+  }
+
+  if (op === NT.OR) {
+    const leftBytes = await applyBarrier(leftStdout, leftIo, BarrierPolicy.VALUE)
+    session.lastExitCode = leftIo.exitCode
+    if (leftIo.exitCode === 0) {
+      return [
+        leftBytes,
+        leftIo,
+        new ExecutionNode({ op: '||', exitCode: leftIo.exitCode, children }),
+      ]
+    }
+    const [rightStdout, rightIo, rightExec] = await executeNode(right, session, stdin, callStack)
+    children.push(rightExec)
+    const rightBytes = await materialize(rightStdout)
+    const merged = await leftIo.merge(rightIo)
+    const combined = asyncChain(leftBytes, rightBytes)
+    return [combined, merged, new ExecutionNode({ op: '||', exitCode: merged.exitCode, children })]
+  }
+
+  // ; (semicolon) or other: run both regardless
+  const leftBytes = await applyBarrier(leftStdout, leftIo, BarrierPolicy.VALUE)
+  session.lastExitCode = leftIo.exitCode
+  const [rightStdout, rightIo, rightExec] = await executeNode(right, session, stdin, callStack)
+  children.push(rightExec)
+  const rightBytes = await materialize(rightStdout)
+  const merged = await leftIo.merge(rightIo)
+  const combined = asyncChain(leftBytes, rightBytes)
+  return [
+    combined,
+    merged,
+    new ExecutionNode({ op: op ?? ';', exitCode: merged.exitCode, children }),
+  ]
+}
+
+export async function handleSubshell(
+  executeNode: ExecuteNodeFn,
+  body: readonly TSNodeLike[],
+  session: Session,
+  stdin: ByteSource | null = null,
+  callStack: CallStack | null = null,
+): Promise<Result> {
+  const savedCwd = session.cwd
+  const savedEnv = { ...session.env }
+  try {
+    const allStdout: ByteSource[] = []
+    let mergedIo = new IOResult()
+    let lastExec = new ExecutionNode({ command: '()', exitCode: 0 })
+    for (const child of body) {
+      const [stdout, io, childExec] = await executeNode(child, session, stdin, callStack)
+      if (stdout !== null) allStdout.push(stdout)
+      mergedIo = await mergedIo.merge(io)
+      lastExec = childExec
+    }
+    if (allStdout.length === 1 && allStdout[0] !== undefined) {
+      return [allStdout[0], mergedIo, lastExec]
+    }
+    const combined = allStdout.length > 0 ? asyncChain(...allStdout) : null
+    return [combined, mergedIo, lastExec]
+  } finally {
+    session.cwd = savedCwd
+    session.env = savedEnv
+  }
+}
+
+function concat(chunks: Uint8Array[]): Uint8Array {
+  let total = 0
+  for (const c of chunks) total += c.byteLength
+  const out = new Uint8Array(total)
+  let offset = 0
+  for (const c of chunks) {
+    out.set(c, offset)
+    offset += c.byteLength
+  }
+  return out
+}

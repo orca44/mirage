@@ -1,0 +1,245 @@
+---
+title: Slack
+icon: slack
+description: Mount a Slack workspace as a virtual filesystem from Node or the browser.
+---
+
+MIRAGE ships `SlackResource` in **two runtimes**:
+
+- `@struktoai/mirage-node`, talks to `https://slack.com/api/*` directly using a bot token (and optionally a user token for `search.messages`).
+- `@struktoai/mirage-browser`, stays secret-free: a small proxy server on your backend holds the token and forwards `/api/slack/*` to `https://slack.com/api/*`. The browser only ever sees the proxy URL.
+
+Both runtimes expose the same filesystem shape (`/slack/channels/`, `/slack/dms/`, `/slack/users/`) and the same shell commands (`slack-post-message`, `slack-search`, etc.).
+
+## Get a bot token
+
+1. Visit the [Slack API basics page](https://api.slack.com/authentication/basics) and create an app for your workspace.
+2. Under **OAuth & Permissions**, add the bot scopes you need. The minimum for read access is:
+   - `channels:history`, `channels:read`
+   - `groups:history`, `groups:read`
+   - `im:history`, `im:read`
+   - `users:read`
+3. For posting messages, also add `chat:write`.
+4. For [`search.messages`](https://api.slack.com/methods/search.messages), Slack requires a **user token** (`xoxp-…`) with `search:read`. Bot tokens (`xoxb-…`) get `not_allowed_token_type`. Provide it via the optional `searchToken` field.
+5. Install the app to your workspace and copy the **Bot User OAuth Token** (`xoxb-…`).
+
+```bash
+# .env.development
+SLACK_BOT_TOKEN=xoxb-...
+SLACK_USER_TOKEN=xoxp-...   # optional, only needed for slack-search
+```
+
+## Node (server-side)
+
+```bash
+pnpm add @struktoai/mirage-node
+```
+
+```ts
+import { MountMode, SlackResource, Workspace } from '@struktoai/mirage-node'
+
+const slack = new SlackResource({
+  token: process.env.SLACK_BOT_TOKEN!,
+  searchToken: process.env.SLACK_USER_TOKEN,  // optional
+})
+
+const ws = new Workspace({ '/slack': slack }, { mode: MountMode.READ })
+const res = await ws.execute('ls /slack/channels/')
+console.log(res.stdoutText)
+```
+
+## Browser
+
+```bash
+pnpm add @struktoai/mirage-browser
+```
+
+The browser package never sees the bot token. Instead, point it at a relative URL that your backend proxies to `https://slack.com/api/*`, attaching the `Authorization: Bearer …` header server-side.
+
+### 1. Server: minimal proxy
+
+```ts
+import { createServer } from 'node:http'
+
+const TOKEN = process.env.SLACK_BOT_TOKEN!
+const PREFIX = '/api/slack/'
+
+createServer(async (req, res) => {
+  const url = new URL(req.url ?? '/', 'http://localhost')
+  if (!url.pathname.startsWith(PREFIX)) {
+    res.statusCode = 404
+    res.end()
+    return
+  }
+  const upstream = new URL(`https://slack.com/api/${url.pathname.slice(PREFIX.length)}`)
+  upstream.search = url.search
+
+  const method = (req.method ?? 'GET').toUpperCase()
+  const chunks: Buffer[] = []
+  if (method !== 'GET' && method !== 'HEAD') {
+    for await (const chunk of req) chunks.push(chunk as Buffer)
+  }
+  const body = chunks.length > 0 ? Buffer.concat(chunks).toString('utf-8') : undefined
+
+  const headers: Record<string, string> = { Authorization: `Bearer ${TOKEN}` }
+  const ct = req.headers['content-type']
+  if (typeof ct === 'string') headers['content-type'] = ct
+
+  const upstreamRes = await fetch(upstream, { method, headers, ...(body !== undefined ? { body } : {}) })
+  const text = await upstreamRes.text()
+  res.statusCode = upstreamRes.status
+  const upstreamCt = upstreamRes.headers.get('content-type')
+  if (upstreamCt !== null) res.setHeader('content-type', upstreamCt)
+  res.end(text)
+}).listen(8901, '127.0.0.1')
+```
+
+### 2. Browser: wire it up
+
+```ts
+import { MountMode, SlackResource, Workspace } from '@struktoai/mirage-browser'
+
+const slack = new SlackResource({
+  proxyUrl: '/api/slack',
+  // For multi-tenant setups, return per-request auth headers:
+  // getHeaders: async () => ({ Authorization: `Bearer ${userJwt}` }),
+})
+
+const ws = new Workspace({ '/slack': slack }, { mode: MountMode.READ })
+const res = await ws.execute('ls /slack/channels/')
+console.log(res.stdoutText)
+```
+
+<Warning>
+Calling `https://slack.com/api/*` directly from a browser fails CORS. The proxy is mandatory, Slack does not set permissive CORS headers.
+</Warning>
+
+## Filesystem layout
+
+```text
+/slack/
+  channels/
+    <channel-name>__<channel-id>/
+      <yyyy-mm-dd>.jsonl
+      ...
+  dms/
+    <user-name>__<dm-id>/
+      <yyyy-mm-dd>.jsonl
+      ...
+  users/
+    <username>__<user-id>.json
+    ...
+```
+
+Each channel directory contains day-partitioned JSONL files for the last 90 days (or since channel creation). Each user file is the full profile JSON returned by `users.profile.get`. The Slack ID is embedded after `__` in directory and file names so you can extract it for the resource-specific commands without an extra lookup.
+
+## Shell commands
+
+Every standard MIRAGE shell command works on the mounted Slack tree:
+
+| Command         | Notes                                      |
+| --------------- | ------------------------------------------ |
+| `ls`            | List channels, DMs, users, dates           |
+| `cat`           | Read `.jsonl` history or user `.json`      |
+| `head` / `tail` | First/last N lines                         |
+| `grep` / `rg`   | Pattern search (file or directory level)   |
+| `jq`            | Query JSON; use `.[]` prefix for JSONL     |
+| `wc`            | Line/word/byte counts                      |
+| `stat`          | File metadata (name, size, type)           |
+| `find`          | Recursive search with `-name`, `-maxdepth` |
+| `tree`          | Directory tree view                        |
+| `pwd` / `cd`    | Navigate the virtual tree                  |
+| `echo` (glob)   | Glob expansion via `resolve_glob`          |
+
+Resource-specific commands:
+
+### `slack-post-message`
+
+```bash
+slack-post-message --channel_id C04KEPWF6V7 --text "Hello from MIRAGE"
+```
+
+| Option         | Required | Description           |
+| -------------- | -------- | --------------------- |
+| `--channel_id` | yes      | Slack channel ID      |
+| `--text`       | yes      | Message text to send  |
+
+### `slack-reply-to-thread`
+
+```bash
+slack-reply-to-thread --channel_id C04KEPWF6V7 --ts 1712345678.123456 --text "Reply"
+```
+
+| Option         | Required | Description             |
+| -------------- | -------- | ----------------------- |
+| `--channel_id` | yes      | Slack channel ID        |
+| `--ts`         | yes      | Thread parent timestamp |
+| `--text`       | yes      | Reply text              |
+
+### `slack-add-reaction`
+
+```bash
+slack-add-reaction --channel_id C04KEPWF6V7 --ts 1712345678.123456 --reaction thumbsup
+```
+
+| Option         | Required | Description                   |
+| -------------- | -------- | ----------------------------- |
+| `--channel_id` | yes      | Slack channel ID              |
+| `--ts`         | yes      | Message timestamp to react to |
+| `--reaction`   | yes      | Emoji name (without colons)   |
+
+### `slack-search`
+
+```bash
+slack-search --query "incident report"
+```
+
+Requires `searchToken` (a Slack **user token**, `xoxp-…`, with `search:read`). Bot tokens cannot call `search.messages`.
+
+### `slack-get-users`
+
+```bash
+slack-get-users --query "alice"
+```
+
+Returns matching users as a JSON array.
+
+### `slack-get-user-profile`
+
+```bash
+slack-get-user-profile --user_id U04K21SEVR9
+```
+
+Returns the user profile JSON. The user ID is embedded in `/slack/users/<name>__<id>.json`.
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="`not_allowed_token_type` on slack-search / rg /slack/">
+    `search.messages` requires a **user token** (`xoxp-…`) with `search:read` scope. Set `searchToken` on the `SlackConfig`:
+
+    ```ts
+    new SlackResource({
+      token: process.env.SLACK_BOT_TOKEN!,
+      searchToken: process.env.SLACK_USER_TOKEN,
+    })
+    ```
+
+    Without it, workspace-scope `rg` and `slack-search` fail; channel-scope `rg` (e.g. `rg foo /slack/channels/general__C…/`) still works since it streams the JSONL files directly.
+  </Accordion>
+  <Accordion title="CORS error in browser">
+    The browser cannot call `https://slack.com/api/*` directly, Slack does not set permissive CORS headers. You must run the proxy server shown above (or your own equivalent) and point `proxyUrl` at it.
+  </Accordion>
+  <Accordion title="`rate_limited` from Slack">
+    `SlackResource` uses an `IndexCacheStore` (default TTL 600s) to deduplicate channel / user / date listings, but high-volume reads of `.jsonl` files can still hit Slack's per-method rate limits. Cache hits avoid the API entirely; tune `indexTtl` if your workspace changes slowly. Per [Slack docs](https://api.slack.com/docs/rate-limits), Tier 3 methods like `conversations.history` allow ~50 requests / minute / workspace.
+  </Accordion>
+</AccordionGroup>
+
+## Examples
+
+- [`examples/typescript/slack/slack.ts`](https://github.com/strukto-ai/mirage/blob/main/examples/typescript/slack/slack.ts), shell commands against `/slack/` (`ls`, `cat`, `grep`, `jq`, `tree`, `find`, `cd`, glob).
+- [`examples/typescript/slack/slack_vfs.ts`](https://github.com/strukto-ai/mirage/blob/main/examples/typescript/slack/slack_vfs.ts), `patchNodeFs(ws)` so native `node:fs` calls route through the workspace.
+- [`examples/typescript/slack/slack_fuse.ts`](https://github.com/strukto-ai/mirage/blob/main/examples/typescript/slack/slack_fuse.ts), FUSE-mount the workspace so external processes can browse `/slack/` as a real filesystem.
+- [`examples/typescript/slack/slack_browser/`](https://github.com/strukto-ai/mirage/tree/main/examples/typescript/slack/slack_browser), proxy server + `@struktoai/mirage-browser` SlackResource demo.
+
+See [Python Slack Resource](/python/resource/slack) for the equivalent Python wiring.

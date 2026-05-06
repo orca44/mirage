@@ -1,0 +1,38 @@
+// ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+// ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
+import type { FileStat, PathSpec } from '@struktoai/mirage-core'
+import type { Stats } from 'ssh2'
+import type { SSHAccessor } from '../../accessor/ssh.ts'
+import { attrsToFileStat } from './entry.ts'
+import { enoent, isNoSuchFile, joinRoot, stripPrefix } from './utils.ts'
+
+export async function stat(accessor: SSHAccessor, p: PathSpec): Promise<FileStat> {
+  const sftp = await accessor.sftp()
+  const virtual = stripPrefix(p)
+  const remote = joinRoot(accessor.config.root ?? '/', virtual)
+  const attrs = await new Promise<Stats>((resolveFn, rejectFn) => {
+    sftp.lstat(remote, (err, stats) => {
+      if (err !== undefined) {
+        if (isNoSuchFile(err)) rejectFn(enoent(virtual))
+        else rejectFn(err)
+        return
+      }
+      resolveFn(stats)
+    })
+  })
+  const cleaned = virtual.replace(/\/+$/, '')
+  const name = cleaned.length === 0 ? '/' : (cleaned.split('/').pop() ?? '/')
+  return attrsToFileStat(name, attrs)
+}

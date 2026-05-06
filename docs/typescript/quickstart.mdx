@@ -1,0 +1,76 @@
+---
+title: TypeScript Quickstart
+icon: /images/typescript-logo.svg
+description: Create a Mirage TypeScript workspace, mount RAM as a virtual filesystem, and run shell commands with @struktoai/mirage-node.
+keywords: ["Mirage TypeScript quickstart", "@struktoai/mirage-node", "virtual filesystem", "AI agents", "shell commands"]
+---
+
+## Installation
+
+Install the Node runtime:
+
+```bash
+pnpm add @struktoai/mirage-node
+pnpm add -D tsx typescript
+```
+
+`npm install @struktoai/mirage-node` and `yarn add @struktoai/mirage-node` work too.
+
+## Create a Workspace
+
+Start with the RAM resource so you can try Mirage without credentials.
+
+```ts
+import { MountMode, RAMResource, Workspace } from '@struktoai/mirage-node'
+
+async function main(): Promise<void> {
+  const ws = new Workspace({ '/data': new RAMResource() }, { mode: MountMode.WRITE })
+
+  await ws.execute('echo "hello mirage" | tee /data/hello.txt')
+  const result = await ws.execute('cat /data/hello.txt')
+  process.stdout.write(result.stdoutText)
+
+  await ws.close()
+}
+
+main()
+```
+
+Run it:
+
+```bash
+pnpm tsx quickstart.ts
+```
+
+## Run Commands
+
+Once a resource is mounted, you can use Mirage like a shell over your virtual filesystem:
+
+```ts
+import { MountMode, RAMResource, Workspace } from '@struktoai/mirage-node'
+
+async function main(): Promise<void> {
+  const ws = new Workspace({ '/data': new RAMResource() }, { mode: MountMode.WRITE })
+
+  await ws.execute(`echo '{"name": "alice"}' | tee /data/user.json`)
+
+  const files = await ws.execute('ls /data/')
+  process.stdout.write(files.stdoutText)
+
+  const name = await ws.execute('jq ".name" /data/user.json')
+  process.stdout.write(name.stdoutText)
+
+  const match = await ws.execute('grep alice /data/user.json')
+  process.stdout.write(match.stdoutText)
+
+  await ws.close()
+}
+
+main()
+```
+
+## Next Steps
+
+- See [TypeScript Installation](/typescript/install) for optional native peers (FUSE, Redis, Postgres, MongoDB, SSH, Email, Audio).
+- Browse [TypeScript Agents](/typescript/agents/index) to wire Mirage into OpenAI Agents SDK, Vercel AI SDK, LangChain, Mastra, and more.
+- Pick a real backend from the Resources section, such as [S3](/typescript/setup/s3), [Slack](/typescript/slack), or [Discord](/typescript/discord).

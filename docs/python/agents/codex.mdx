@@ -1,0 +1,34 @@
+---
+title: OpenAI Codex
+description: Run OpenAI's Codex CLI against any Mirage workspace by mounting it as a real filesystem via FUSE.
+icon: /images/openai-logo.svg
+---
+
+[OpenAI Codex](https://github.com/openai/codex) is OpenAI's coding-agent CLI. Like [Claude Code](/python/agents/claude-code), it operates on a real filesystem and doesn't expose a pluggable backend, so Mirage integrates by [FUSE-mounting](/python/setup/fuse) a workspace and letting you point `codex` at the mountpoint.
+
+## Install
+
+```bash
+uv add 'mirage-ai[fuse]'
+```
+
+Then install [OpenAI Codex](https://github.com/openai/codex) separately.
+
+## Usage
+
+```python
+from mirage import MountMode, Workspace
+from mirage.resource.ram import RAMResource
+
+with Workspace({"/": RAMResource()}, mode=MountMode.WRITE, fuse=True) as ws:
+    print(f"cd {ws.fuse_mountpoint} && codex")
+    input("Press Enter when done...")
+```
+
+The mountpoint behaves like a regular directory. Codex's `read_file`, `write_file`, and `run_shell` tools all dispatch through Mirage's ops layer.
+
+## Why FUSE instead of an SDK integration?
+
+The Codex CLI's tool surface isn't pluggable, it expects host file operations. FUSE makes those host operations *be* Mirage operations.
+
+You lose per-tool customization and Mirage's op-record telemetry; you gain zero integration effort and compatibility with every Codex feature. Same trade-off as [Claude Code](/python/agents/claude-code).

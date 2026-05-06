@@ -1,0 +1,45 @@
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
+from mirage.commands.config import RegisteredCommand, command
+from mirage.commands.spec import CommandSpec
+
+
+def test_command_registers_multiple_resources():
+    spec = CommandSpec()
+
+    @command(name="cat", resource=["gdocs", "gdrive"], spec=spec)
+    def dummy_fn():
+        pass
+
+    assert hasattr(dummy_fn, "_registered_commands")
+    resources = [rc.resource for rc in dummy_fn._registered_commands]
+    assert "gdocs" in resources
+    assert "gdrive" in resources
+    assert len(dummy_fn._registered_commands) == 2
+    for rc in dummy_fn._registered_commands:
+        assert isinstance(rc, RegisteredCommand)
+        assert rc.name == "cat"
+
+
+def test_command_single_resource_still_works():
+    spec = CommandSpec()
+
+    @command(name="ls", resource="disk", spec=spec)
+    def dummy_fn():
+        pass
+
+    assert hasattr(dummy_fn, "_registered_commands")
+    assert len(dummy_fn._registered_commands) == 1
+    assert dummy_fn._registered_commands[0].resource == "disk"

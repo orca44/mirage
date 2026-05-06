@@ -1,0 +1,46 @@
+---
+title: Slack
+icon: slack
+description: Set up a Slack Bot Token for the Slack resource.
+---
+
+## Credentials
+
+### 1. Create a Slack App
+
+1. Go to https://api.slack.com/apps
+1. **Create New App** -> **From scratch**
+1. Name it (e.g., "Mirage") and select your workspace
+
+### 2. Configure Bot Permissions
+
+1. **OAuth & Permissions** in the left sidebar
+1. Under **Bot Token Scopes**, add:
+   - `channels:history` - read messages in public channels
+   - `channels:read` - list public channels
+   - `groups:history` - read messages in private channels (optional)
+   - `groups:read` - list private channels (optional)
+   - `chat:write` - send messages (for write mode)
+
+### 3. Install to Workspace
+
+1. **Install App** in the left sidebar -> **Install to Workspace**
+1. Authorize the requested permissions
+1. Copy the **Bot User OAuth Token** (`xoxb-...`)
+
+### 4. Set Environment Variables
+
+```bash
+# .env.development
+SLACK_BOT_TOKEN=xoxb-xxxx...
+```
+
+### 5. Invite the Bot
+
+The bot must be invited to channels it needs to read:
+
+```
+/invite @Mirage
+```
+
+For Python configuration, see the [Python Slack Setup](/python/setup/slack) guide.

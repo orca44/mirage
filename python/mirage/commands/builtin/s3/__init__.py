@@ -1,0 +1,143 @@
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
+from mirage.commands.builtin.s3.awk import awk
+from mirage.commands.builtin.s3.base64_cmd import base64_cmd
+from mirage.commands.builtin.s3.basename import basename
+from mirage.commands.builtin.s3.cat import COMMANDS as _CAT_COMMANDS
+from mirage.commands.builtin.s3.cmp import cmp_cmd
+from mirage.commands.builtin.s3.column import column
+from mirage.commands.builtin.s3.comm import comm
+from mirage.commands.builtin.s3.cp import cp
+from mirage.commands.builtin.s3.csplit import csplit
+from mirage.commands.builtin.s3.cut import COMMANDS as _CUT_COMMANDS
+from mirage.commands.builtin.s3.diff import diff
+from mirage.commands.builtin.s3.dirname import dirname
+from mirage.commands.builtin.s3.du import du
+from mirage.commands.builtin.s3.expand import expand
+from mirage.commands.builtin.s3.file import COMMANDS as _FILE_COMMANDS
+from mirage.commands.builtin.s3.find import find
+from mirage.commands.builtin.s3.fmt import fmt
+from mirage.commands.builtin.s3.fold import fold
+from mirage.commands.builtin.s3.grep import COMMANDS as _GREP_COMMANDS
+from mirage.commands.builtin.s3.gunzip import gunzip
+from mirage.commands.builtin.s3.gzip import gzip
+from mirage.commands.builtin.s3.head import COMMANDS as _HEAD_COMMANDS
+from mirage.commands.builtin.s3.iconv import iconv
+from mirage.commands.builtin.s3.join import join
+from mirage.commands.builtin.s3.jq import jq
+from mirage.commands.builtin.s3.ln import ln
+from mirage.commands.builtin.s3.look import look
+from mirage.commands.builtin.s3.ls import COMMANDS as _LS_COMMANDS
+from mirage.commands.builtin.s3.md5 import md5
+from mirage.commands.builtin.s3.mkdir import mkdir
+from mirage.commands.builtin.s3.mktemp import mktemp
+from mirage.commands.builtin.s3.mv import mv
+from mirage.commands.builtin.s3.nl import nl
+from mirage.commands.builtin.s3.paste import paste
+from mirage.commands.builtin.s3.patch import patch
+from mirage.commands.builtin.s3.readlink import readlink
+from mirage.commands.builtin.s3.realpath import realpath
+from mirage.commands.builtin.s3.rev import rev
+from mirage.commands.builtin.s3.rg import rg
+from mirage.commands.builtin.s3.rm import rm
+from mirage.commands.builtin.s3.sed import sed
+from mirage.commands.builtin.s3.sha256sum import sha256sum
+from mirage.commands.builtin.s3.shuf import shuf
+from mirage.commands.builtin.s3.sort import sort
+from mirage.commands.builtin.s3.split import split
+from mirage.commands.builtin.s3.stat import COMMANDS as _STAT_COMMANDS
+from mirage.commands.builtin.s3.strings import strings
+from mirage.commands.builtin.s3.tac import tac
+from mirage.commands.builtin.s3.tail import COMMANDS as _TAIL_COMMANDS
+from mirage.commands.builtin.s3.tar import tar
+from mirage.commands.builtin.s3.tee import tee
+from mirage.commands.builtin.s3.touch import touch
+from mirage.commands.builtin.s3.tr import tr
+from mirage.commands.builtin.s3.tree import tree
+from mirage.commands.builtin.s3.tsort import tsort
+from mirage.commands.builtin.s3.unexpand import unexpand
+from mirage.commands.builtin.s3.uniq import uniq
+from mirage.commands.builtin.s3.unzip import unzip as unzip_cmd
+from mirage.commands.builtin.s3.wc import COMMANDS as _WC_COMMANDS
+from mirage.commands.builtin.s3.xxd import xxd
+from mirage.commands.builtin.s3.zcat import zcat
+from mirage.commands.builtin.s3.zgrep import zgrep
+from mirage.commands.builtin.s3.zip_cmd import zip_cmd
+
+COMMANDS = [
+    awk,
+    base64_cmd,
+    basename,
+    *_CAT_COMMANDS,
+    cmp_cmd,
+    column,
+    comm,
+    cp,
+    csplit,
+    *_CUT_COMMANDS,
+    diff,
+    dirname,
+    du,
+    expand,
+    *_FILE_COMMANDS,
+    find,
+    fmt,
+    fold,
+    *_GREP_COMMANDS,
+    gunzip,
+    gzip,
+    *_HEAD_COMMANDS,
+    iconv,
+    join,
+    jq,
+    ln,
+    look,
+    *_LS_COMMANDS,
+    md5,
+    mkdir,
+    mktemp,
+    mv,
+    nl,
+    paste,
+    patch,
+    readlink,
+    realpath,
+    rev,
+    rg,
+    rm,
+    sed,
+    sha256sum,
+    shuf,
+    sort,
+    split,
+    *_STAT_COMMANDS,
+    strings,
+    tac,
+    *_TAIL_COMMANDS,
+    tar,
+    tee,
+    touch,
+    tr,
+    tree,
+    tsort,
+    unexpand,
+    uniq,
+    unzip_cmd,
+    *_WC_COMMANDS,
+    xxd,
+    zcat,
+    zgrep,
+    zip_cmd,
+]

@@ -1,0 +1,130 @@
+---
+title: Cloudflare R2
+icon: cloud
+description: Mount Cloudflare R2 storage as a virtual filesystem.
+---
+The R2 resource exposes a Cloudflare R2 bucket as a virtual filesystem.
+It uses the S3-compatible API internally.
+
+For credential setup, see [R2 Setup](/python/setup/r2).
+
+## Config
+
+```python
+import os
+
+from mirage import MountMode, Workspace
+from mirage.resource.r2 import R2Config, R2Resource
+
+config = R2Config(
+    bucket=os.environ["R2_BUCKET"],
+    account_id=os.environ["R2_ACCOUNT_ID"],
+    access_key_id=os.environ["R2_ACCESS_KEY_ID"],
+    secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"],
+)
+resource = R2Resource(config=config)
+ws = Workspace({"/r2": resource}, mode=MountMode.READ)
+```
+
+| Field              | Required | Default  | Description                          |
+| ------------------ | -------- | -------- | ------------------------------------ |
+| `bucket`           | yes      |          | R2 bucket name                       |
+| `account_id`       | no*      |          | Cloudflare account ID                |
+| `endpoint_url`     | no*      |          | Custom endpoint URL                  |
+| `access_key_id`    | no       |          | R2 API token access key              |
+| `secret_access_key`| no       |          | R2 API token secret key              |
+| `aws_profile`      | no       |          | AWS profile name (alternative auth)  |
+| `region`           | no       | `auto`   | Region (R2 defaults to `auto`)       |
+| `timeout`          | no       | `30`     | Request timeout in seconds           |
+| `proxy`            | no       |          | HTTP proxy URL                       |
+
+*Either `account_id` or `endpoint_url` is required. If `account_id` is
+provided, the endpoint is auto-built as
+`https://{account_id}.r2.cloudflarestorage.com`.
+
+## Filesystem Layout
+
+```text
+/r2/
+  <object-key-path>/
+    <file>
+```
+
+Object keys map directly to virtual paths.
+
+Example:
+
+```text
+/r2/
+  assets/
+    logo.png
+    style.css
+  data/
+    export.parquet
+    metrics.csv
+```
+
+Columnar files (`.parquet`, `.orc`, `.feather`) return formatted tables
+when read via `cat`.
+
+## Cache
+
+Uses `IndexCacheStore` for directory listings with configurable TTL.
+File content caching is handled by the workspace.
+
+## Example
+
+```python
+import asyncio
+import os
+
+from dotenv import load_dotenv
+
+from mirage import MountMode, Workspace
+from mirage.resource.r2 import R2Config, R2Resource
+
+load_dotenv(".env.development")
+
+config = R2Config(
+    bucket=os.environ["R2_BUCKET"],
+    account_id=os.environ["R2_ACCOUNT_ID"],
+    access_key_id=os.environ["R2_ACCESS_KEY_ID"],
+    secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"],
+)
+resource = R2Resource(config=config)
+
+
+async def main():
+    ws = Workspace({"/r2": resource}, mode=MountMode.READ)
+
+    r = await ws.execute("ls /r2/")
+    print(await r.stdout_str())
+
+    r = await ws.execute("cat /r2/data/metrics.csv | head -n 10")
+    print(await r.stdout_str())
+
+    # Parquet files render as formatted tables
+    r = await ws.execute("cat /r2/data/export.parquet")
+    print(await r.stdout_str())
+
+    r = await ws.execute("find /r2/ -name '*.csv'")
+    print(await r.stdout_str())
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+## Shell Commands
+
+| Command         | Notes                                        |
+| --------------- | -------------------------------------------- |
+| `ls`            | List objects and prefixes                    |
+| `cat`           | Read object content (tables for columnar)    |
+| `head` / `tail` | First/last N lines                           |
+| `grep` / `rg`   | Pattern search                               |
+| `jq`            | Query JSON objects                           |
+| `wc`            | Line/word/byte counts                        |
+| `stat`          | Object metadata (size, modified time)        |
+| `find`          | Recursive search with `-name`, `-maxdepth`   |
+| `tree`          | Directory tree view                          |

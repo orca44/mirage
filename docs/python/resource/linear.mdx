@@ -1,0 +1,391 @@
+---
+title: Linear
+icon: chart-gantt
+---
+The Linear resource exposes Linear workspace data as a virtual filesystem
+mounted at some prefix such as `/linear/`.
+
+For API key setup, see [Linear Setup](/python/setup/linear).
+
+## Config
+
+```python
+import os
+
+from mirage import MountMode, Workspace
+from mirage.resource.linear import LinearConfig, LinearResource
+
+config = LinearConfig(api_key=os.environ["LINEAR_API_KEY"])
+resource = LinearResource(config=config)
+ws = Workspace({"/linear": resource}, mode=MountMode.READ)
+```
+
+## Filesystem Layout
+
+```text
+/linear/
+  teams/
+    <team-key>__<team-name>__<team-id>/
+      team.json
+      members/
+        <display-name>__<user-id>.json
+        ...
+      issues/
+        <issue-key>__<issue-id>/
+          issue.json
+          comments.jsonl
+        ...
+      projects/
+        <name>__<project-id>.json
+        ...
+      cycles/
+        <name>__<cycle-id>.json
+        ...
+```
+
+Example:
+
+```text
+/linear/
+  teams/
+    ENG__Engineering__abc123def/
+      team.json
+      members/
+        alice__usr_001.json
+        bob__usr_002.json
+      issues/
+        ENG-123__iss_001/
+          issue.json
+          comments.jsonl
+        ENG-124__iss_002/
+          issue.json
+          comments.jsonl
+      projects/
+        Mirage__proj_001.json
+      cycles/
+        Sprint-12__cyc_001.json
+```
+
+Directory and file names embed the Linear ID after `__` so that
+resource-specific commands can reference the correct resource without
+extra lookups.
+
+### Teams
+
+Each team directory is named:
+
+```text
+<team-key>__<team-name>__<team-id>
+```
+
+Inside the team directory:
+
+- `team.json` is the normalized team metadata
+- `members/` contains one JSON file per member
+- `issues/` contains one directory per issue
+- `projects/` contains one JSON file per project, including lightweight
+  related issue references
+- `cycles/` contains one JSON file per cycle
+
+### Issues
+
+Each issue directory is named:
+
+```text
+<issue-key>__<issue-id>
+```
+
+Each issue directory contains:
+
+- `issue.json` -- normalized issue metadata with command-aligned fields such as
+  `issue_id`, `issue_key`, `team_id`, `state_id`, and `assignee_id`
+- `comments.jsonl` -- normalized comment stream ordered by `created_at`
+
+`comments.jsonl` is a Mirage representation chosen for shell-friendly
+workflows. It is not a native Linear file format.
+
+### Members
+
+Each member file is named:
+
+```text
+<display-name>__<user-id>.json
+```
+
+Member JSON includes command-aligned identifiers such as `user_id` and `email`
+so the value can be reused directly in commands like `linear-issue-assign`.
+
+### Projects and Cycles
+
+Project and cycle files are named:
+
+```text
+<name>__<id>.json
+```
+
+Project JSON includes lightweight related issue references. Cycle JSON
+includes cycle metadata such as start and end dates.
+
+## Cache
+
+The Linear resource uses `IndexCacheStore` (same as Discord and other
+resources). There is no separate content cache -- file content caching
+is handled by the workspace `IOResult` mechanism.
+
+## Example
+
+See `examples/linear/linear.py` for the full working example.
+
+```bash
+# List teams
+ls /linear/teams/
+
+# Read team metadata
+cat /linear/teams/ENG__Engineering__abc123/team.json
+
+# List issues
+ls /linear/teams/ENG__Engineering__abc123/issues/
+
+# Read an issue
+cat /linear/teams/ENG__Engineering__abc123/issues/ENG-123__iss_001/issue.json
+
+# Read issue comments
+cat /linear/teams/ENG__Engineering__abc123/issues/ENG-123__iss_001/comments.jsonl
+
+# Extract issue ID with jq
+cat /linear/teams/ENG__Engineering__abc123/issues/ENG-123__iss_001/issue.json \
+  | jq '.issue_id'
+
+# Read last 5 comments
+tail -n 5 /linear/teams/ENG__Engineering__abc123/issues/ENG-123__iss_001/comments.jsonl
+
+# List members
+ls /linear/teams/ENG__Engineering__abc123/members/
+
+# Read a project with its issues
+cat /linear/teams/ENG__Engineering__abc123/projects/Mirage__proj_001.json \
+  | jq '.issues'
+
+# Tree view
+tree -L 2 /linear/teams/
+```
+
+## Finding IDs
+
+IDs are embedded in directory and file names after `__`:
+
+```bash
+# Team ID -- embedded in directory name
+ls /linear/teams/
+# -> ENG__Engineering__abc123   <- team_id = abc123
+
+# Issue ID -- embedded in issue directory name
+ls /linear/teams/ENG__Engineering__abc123/issues/
+# -> ENG-123__iss_001   <- issue_id = iss_001
+
+# Member ID -- embedded in member file name
+ls /linear/teams/ENG__Engineering__abc123/members/
+# -> alice__usr_001.json   <- user_id = usr_001
+
+# Use stat for structured metadata
+stat /linear/teams/ENG__Engineering__abc123/issues/ENG-123__iss_001/issue.json
+
+# Extract fields with jq
+cat /linear/teams/ENG__Engineering__abc123/issues/ENG-123__iss_001/issue.json \
+  | jq '{issue_id, issue_key, team_id, state_id, assignee_id}'
+```
+
+## Shell Commands
+
+Standard commands available on the mounted Linear tree:
+
+| Command         | Notes                                      |
+| --------------- | ------------------------------------------ |
+| `ls`            | List teams, issues, members, projects      |
+| `cat`           | Read .json metadata or .jsonl comments     |
+| `head` / `tail` | First/last N lines                         |
+| `grep` / `rg`   | Pattern search (file or directory level)   |
+| `jq`            | Query JSON fields                          |
+| `wc`            | Line/word/byte counts                      |
+| `stat`          | File metadata (name, size, type)           |
+| `find`          | Recursive search with `-name`, `-maxdepth` |
+| `tree`          | Directory tree view                        |
+| `basename`      | Extract file name from path                |
+| `dirname`       | Extract directory from path                |
+| `realpath`      | Resolve path to absolute form              |
+
+## Resource-Specific Commands
+
+### `linear-issue-create`
+
+Create a new issue. Description can be passed via `--description`, `--description_file`, or stdin.
+
+```bash
+linear-issue-create --team_key ENG --title "New bug"
+linear-issue-create --team_id abc123 --title "New bug" --description "Details here"
+cat brief.md | linear-issue-create --team_key ENG --title "Agent bug"
+```
+
+| Option               | Required | Description                         |
+| -------------------- | -------- | ----------------------------------- |
+| `--team_id`          | \*       | Linear team ID                      |
+| `--team_key`         | \*       | Linear team key (e.g. ENG)          |
+| `--title`            | yes      | Issue title                         |
+| `--description`      | no       | Inline description text             |
+| `--description_file` | no       | Path to file containing description |
+
+\* One of `--team_id` or `--team_key` is required.
+
+### `linear-issue-update`
+
+Update an existing issue. Description can be passed via `--description`, `--description_file`, or stdin.
+
+```bash
+linear-issue-update --issue_key ENG-123 --title "Updated title"
+linear-issue-update --issue_id iss_001 --description "New description"
+```
+
+| Option               | Required | Description                         |
+| -------------------- | -------- | ----------------------------------- |
+| `--issue_id`         | \*       | Linear issue ID                     |
+| `--issue_key`        | \*       | Linear issue key (e.g. ENG-123)     |
+| `--title`            | no       | New title                           |
+| `--description`      | no       | Inline description text             |
+| `--description_file` | no       | Path to file containing description |
+
+\* One of `--issue_id` or `--issue_key` is required.
+
+### `linear-issue-assign`
+
+Assign an issue to a user.
+
+```bash
+linear-issue-assign --issue_key ENG-123 --assignee_email "alice@example.com"
+linear-issue-assign --issue_id iss_001 --assignee_id usr_001
+```
+
+| Option             | Required | Description                     |
+| ------------------ | -------- | ------------------------------- |
+| `--issue_id`       | \*       | Linear issue ID                 |
+| `--issue_key`      | \*       | Linear issue key (e.g. ENG-123) |
+| `--assignee_id`    | \*\*     | Linear user ID                  |
+| `--assignee_email` | \*\*     | User email address              |
+
+\* One of `--issue_id` or `--issue_key` is required.
+\*\* One of `--assignee_id` or `--assignee_email` is required.
+
+### `linear-issue-transition`
+
+Transition an issue to a different workflow state.
+
+```bash
+linear-issue-transition --issue_key ENG-123 --state_name "In Progress"
+linear-issue-transition --issue_id iss_001 --state_id state_001
+```
+
+| Option         | Required | Description                     |
+| -------------- | -------- | ------------------------------- |
+| `--issue_id`   | \*       | Linear issue ID                 |
+| `--issue_key`  | \*       | Linear issue key (e.g. ENG-123) |
+| `--state_id`   | \*\*     | Linear workflow state ID        |
+| `--state_name` | \*\*     | Workflow state name             |
+
+\* One of `--issue_id` or `--issue_key` is required.
+\*\* One of `--state_id` or `--state_name` is required.
+
+### `linear-issue-set-priority`
+
+Set the priority of an issue.
+
+```bash
+linear-issue-set-priority --issue_key ENG-123 --priority 1
+```
+
+| Option        | Required | Description                                                |
+| ------------- | -------- | ---------------------------------------------------------- |
+| `--issue_id`  | \*       | Linear issue ID                                            |
+| `--issue_key` | \*       | Linear issue key (e.g. ENG-123)                            |
+| `--priority`  | yes      | Priority level (0=none, 1=urgent, 2=high, 3=medium, 4=low) |
+
+\* One of `--issue_id` or `--issue_key` is required.
+
+### `linear-issue-set-project`
+
+Assign an issue to a project.
+
+```bash
+linear-issue-set-project --issue_key ENG-123 --project_id proj_001
+```
+
+| Option         | Required | Description                     |
+| -------------- | -------- | ------------------------------- |
+| `--issue_id`   | \*       | Linear issue ID                 |
+| `--issue_key`  | \*       | Linear issue key (e.g. ENG-123) |
+| `--project_id` | yes      | Linear project ID               |
+
+\* One of `--issue_id` or `--issue_key` is required.
+
+### `linear-issue-add-label`
+
+Add a label to an issue.
+
+```bash
+linear-issue-add-label --issue_key ENG-123 --label_id lbl_001
+```
+
+| Option        | Required | Description                     |
+| ------------- | -------- | ------------------------------- |
+| `--issue_id`  | \*       | Linear issue ID                 |
+| `--issue_key` | \*       | Linear issue key (e.g. ENG-123) |
+| `--label_id`  | yes      | Linear label ID                 |
+
+\* One of `--issue_id` or `--issue_key` is required.
+
+### `linear-issue-comment-add`
+
+Add a comment to an issue. Body can be passed via `--body`, `--body_file`, or stdin.
+
+```bash
+linear-issue-comment-add --issue_key ENG-123 --body "Looks good"
+cat note.md | linear-issue-comment-add --issue_key ENG-123
+```
+
+| Option        | Required | Description                     |
+| ------------- | -------- | ------------------------------- |
+| `--issue_id`  | \*       | Linear issue ID                 |
+| `--issue_key` | \*       | Linear issue key (e.g. ENG-123) |
+| `--body`      | \*\*     | Inline comment text             |
+| `--body_file` | \*\*     | Path to file containing body    |
+
+\* One of `--issue_id` or `--issue_key` is required.
+\*\* One of `--body`, `--body_file`, or stdin is required.
+
+### `linear-issue-comment-update`
+
+Update an existing comment. Body can be passed via `--body`, `--body_file`, or stdin.
+
+```bash
+linear-issue-comment-update --comment_id cmt_001 --body "Updated text"
+```
+
+| Option         | Required | Description                  |
+| -------------- | -------- | ---------------------------- |
+| `--comment_id` | yes      | Linear comment ID            |
+| `--body`       | \*\*     | Inline comment text          |
+| `--body_file`  | \*\*     | Path to file containing body |
+
+\*\* One of `--body`, `--body_file`, or stdin is required.
+
+### `linear-search`
+
+Search issues across the workspace.
+
+```bash
+linear-search --query "authentication bug"
+```
+
+| Option    | Required | Description       |
+| --------- | -------- | ----------------- |
+| `--query` | yes      | Search query text |
+
+Returns matching issues as a JSON array.

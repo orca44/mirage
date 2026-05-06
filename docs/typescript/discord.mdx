@@ -1,0 +1,234 @@
+---
+title: Discord
+icon: discord
+description: Mount Discord guilds, channels, and members as a virtual filesystem from Node or the browser.
+---
+
+MIRAGE ships `DiscordResource` in **two runtimes**:
+
+- `@struktoai/mirage-node`, talks to `https://discord.com/api/v10/*` directly using a bot token.
+- `@struktoai/mirage-browser`, stays secret-free: a small proxy server on your backend holds the token and forwards `/api/discord/*` to `https://discord.com/api/v10/*`. The browser only ever sees the proxy URL.
+
+Both runtimes expose the same filesystem shape (`/discord/<guild>/channels/`, `/discord/<guild>/members/`) and the same shell commands (`discord-send-message`, `discord-add-reaction`, etc.).
+
+## Get a bot token
+
+1. Visit the [Discord Developer Portal](https://discord.com/developers/applications) and create a new application.
+2. Under **Bot**, add a bot user and copy the **Bot Token**.
+3. Under **Bot → Privileged Gateway Intents**, enable:
+   - **Server Members Intent**, required for `/discord/<guild>/members/` listings.
+   - **Message Content Intent**, required to read message text in `.jsonl` history files.
+4. Under **OAuth2 → URL Generator**, select the `bot` scope and the following bot permissions:
+   - `Read Messages/View Channels`
+   - `Read Message History`
+   - `Send Messages` (only if you'll use `discord-send-message`)
+   - `Add Reactions` (only if you'll use `discord-add-reaction`)
+5. Open the generated URL in a browser and invite the bot to your guild.
+
+```bash
+# .env.development
+DISCORD_BOT_TOKEN=...
+```
+
+## Node (server-side)
+
+```bash
+pnpm add @struktoai/mirage-node
+```
+
+```ts
+import { DiscordResource, MountMode, Workspace } from '@struktoai/mirage-node'
+
+const discord = new DiscordResource({
+  token: process.env.DISCORD_BOT_TOKEN!,
+})
+
+const ws = new Workspace({ '/discord': discord }, { mode: MountMode.READ })
+const res = await ws.execute('ls /discord/')
+console.log(res.stdoutText)
+```
+
+## Browser
+
+```bash
+pnpm add @struktoai/mirage-browser
+```
+
+The browser package never sees the bot token. Instead, point it at a relative URL that your backend proxies to `https://discord.com/api/v10/*`, attaching the `Authorization: Bot …` header server-side.
+
+### 1. Server: minimal proxy
+
+```ts
+import { createServer } from 'node:http'
+
+const TOKEN = process.env.DISCORD_BOT_TOKEN!
+const PREFIX = '/api/discord/'
+
+createServer(async (req, res) => {
+  const url = new URL(req.url ?? '/', 'http://localhost')
+  if (!url.pathname.startsWith(PREFIX)) {
+    res.statusCode = 404
+    res.end()
+    return
+  }
+  const upstream = new URL(`https://discord.com/api/v10/${url.pathname.slice(PREFIX.length)}`)
+  upstream.search = url.search
+
+  const method = (req.method ?? 'GET').toUpperCase()
+  const chunks: Buffer[] = []
+  if (method !== 'GET' && method !== 'HEAD') {
+    for await (const chunk of req) chunks.push(chunk as Buffer)
+  }
+  const body = chunks.length > 0 ? Buffer.concat(chunks).toString('utf-8') : undefined
+
+  const headers: Record<string, string> = { Authorization: `Bot ${TOKEN}` }
+  const ct = req.headers['content-type']
+  if (typeof ct === 'string') headers['content-type'] = ct
+
+  const upstreamRes = await fetch(upstream, { method, headers, ...(body !== undefined ? { body } : {}) })
+  const text = await upstreamRes.text()
+  res.statusCode = upstreamRes.status
+  const upstreamCt = upstreamRes.headers.get('content-type')
+  if (upstreamCt !== null) res.setHeader('content-type', upstreamCt)
+  res.end(text)
+}).listen(8902, '127.0.0.1')
+```
+
+<Warning>
+Discord bot tokens use the `Bot <token>` auth scheme, **not** `Bearer`. Sending `Bearer …` returns `401 Unauthorized`.
+</Warning>
+
+### 2. Browser: wire it up
+
+```ts
+import { DiscordResource, MountMode, Workspace } from '@struktoai/mirage-browser'
+
+const discord = new DiscordResource({
+  proxyUrl: '/api/discord',
+  // For multi-tenant setups, return per-request auth headers:
+  // getHeaders: async () => ({ Authorization: `Bearer ${userJwt}` }),
+})
+
+const ws = new Workspace({ '/discord': discord }, { mode: MountMode.READ })
+const res = await ws.execute('ls /discord/')
+console.log(res.stdoutText)
+```
+
+<Warning>
+Calling `https://discord.com/api/v10/*` directly from a browser fails CORS. The proxy is mandatory, Discord does not set permissive CORS headers for the bot API.
+</Warning>
+
+## Filesystem layout
+
+```text
+/discord/
+  <guild-name>_<guild-id>/
+    channels/
+      <channel-name>_<channel-id>/
+        <yyyy-mm-dd>.jsonl
+        ...
+    members/
+      <username>_<user-id>.json
+      ...
+```
+
+The root lists one directory per guild the bot has access to. Each guild contains a `channels/` directory with text channels (types 0, 5, 15) and a `members/` directory with one `.json` file per member. Each channel directory contains day-partitioned JSONL files for the 30 days leading up to the channel's last message, inactive channels show dates around their last activity, not today. The Discord snowflake ID is appended after `_` in directory and file names so resource-specific commands can extract it without an extra lookup.
+
+## Shell commands
+
+Every standard MIRAGE shell command works on the mounted Discord tree:
+
+| Command         | Notes                                          |
+| --------------- | ---------------------------------------------- |
+| `ls`            | List guilds, channels, members, dates          |
+| `cat`           | Read `.jsonl` history or member `.json`        |
+| `head` / `tail` | Smart: uses messages API for file scope        |
+| `grep` / `rg`   | Smart: uses search API for channel/guild scope |
+| `jq`            | Query JSON; use `.[]` prefix for JSONL files   |
+| `wc`            | Line/word/byte counts                          |
+| `stat`          | File metadata (name, size, type)               |
+| `find`          | Recursive search with `-name`, `-maxdepth`     |
+| `tree`          | Directory tree view                            |
+| `pwd` / `cd`    | Navigate the virtual tree                      |
+| `echo` (glob)   | Glob expansion via `resolve_glob`              |
+
+Resource-specific commands:
+
+### `discord-send-message`
+
+```bash
+discord-send-message --channel_id 1256522563555819574 --text "Hello from MIRAGE"
+discord-send-message --channel_id 1256522563555819574 --text "Reply" --message_id 1489887688978075769
+```
+
+| Option         | Required | Description                  |
+| -------------- | -------- | ---------------------------- |
+| `--channel_id` | yes      | Discord channel snowflake ID |
+| `--text`       | yes      | Message text to send         |
+| `--message_id` | no       | Message ID to reply to       |
+
+### `discord-add-reaction`
+
+```bash
+discord-add-reaction --channel_id 1256522563555819574 --message_id 1489887688978075769 --reaction 👍
+```
+
+| Option         | Required | Description                  |
+| -------------- | -------- | ---------------------------- |
+| `--channel_id` | yes      | Discord channel snowflake ID |
+| `--message_id` | yes      | Message snowflake ID         |
+| `--reaction`   | yes      | Emoji (unicode or name)      |
+
+### `discord-list-members`
+
+```bash
+discord-list-members --guild_id 1256522563555819574 --query "alice"
+```
+
+| Option       | Required | Description             |
+| ------------ | -------- | ----------------------- |
+| `--guild_id` | yes      | Discord guild snowflake |
+| `--query`    | yes      | Username search query   |
+
+Returns matching members as a JSON array. Requires the **Server Members Intent** to be enabled on the bot.
+
+### `discord-get-server-info`
+
+```bash
+discord-get-server-info --guild_id 1256522563555819574
+```
+
+| Option       | Required | Description             |
+| ------------ | -------- | ----------------------- |
+| `--guild_id` | yes      | Discord guild snowflake |
+
+Returns the guild object JSON (name, icon, member count, etc.).
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Empty `/discord/<guild>/members/` listing">
+    Listing members requires the **Server Members Intent**. Enable it in the Discord Developer Portal under **Bot → Privileged Gateway Intents**. Without it, `members/` returns an empty directory and `discord-list-members` fails.
+  </Accordion>
+  <Accordion title="Empty `content` field in JSONL messages">
+    Reading message text requires the **Message Content Intent**. Enable it in the Discord Developer Portal under **Bot → Privileged Gateway Intents**. Without it, the `content` field on every message is empty.
+  </Accordion>
+  <Accordion title="`401 Unauthorized` from the proxy">
+    Discord bot tokens use the `Authorization: Bot <token>` scheme, **not** `Bearer`. Double-check the proxy server attaches the correct prefix.
+  </Accordion>
+  <Accordion title="CORS error in browser">
+    The browser cannot call `https://discord.com/api/v10/*` directly, Discord does not set permissive CORS headers. You must run the proxy server shown above (or your own equivalent) and point `proxyUrl` at it.
+  </Accordion>
+  <Accordion title="`rate_limited` from Discord">
+    `DiscordResource` uses an `IndexCacheStore` (default TTL 600s) to deduplicate guild / channel / member listings, but high-volume reads of `.jsonl` files can still hit Discord's per-route rate limits. The HTTP transport retries 429 responses honoring `retry_after` up to 3 times, repeated failures usually mean you should slow down or scope reads to specific channels.
+  </Accordion>
+</AccordionGroup>
+
+## Examples
+
+- [`examples/typescript/discord/discord.ts`](https://github.com/strukto-ai/mirage/blob/main/examples/typescript/discord/discord.ts), shell commands against `/discord/` (`ls`, `cat`, `grep`, `jq`, `tree`, `find`, `cd`, glob).
+- [`examples/typescript/discord/discord_vfs.ts`](https://github.com/strukto-ai/mirage/blob/main/examples/typescript/discord/discord_vfs.ts), `patchNodeFs(ws)` so native `node:fs` calls route through the workspace.
+- [`examples/typescript/discord/discord_fuse.ts`](https://github.com/strukto-ai/mirage/blob/main/examples/typescript/discord/discord_fuse.ts), FUSE-mount the workspace so external processes can browse `/discord/` as a real filesystem.
+- [`examples/typescript/discord/discord_browser/`](https://github.com/strukto-ai/mirage/tree/main/examples/typescript/discord/discord_browser), proxy server + `@struktoai/mirage-browser` DiscordResource demo.
+
+See [Python Discord Resource](/python/resource/discord) for the equivalent Python wiring.

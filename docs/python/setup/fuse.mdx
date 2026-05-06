@@ -1,0 +1,45 @@
+---
+title: FUSE
+icon: hard-drive
+description: Set up FUSE support for MIRAGE in Python.
+---
+
+## Prerequisites
+
+- Python 3.12+
+- [uv](https://docs.astral.sh/uv/) package manager (optional)
+
+## System FUSE
+
+Install the OS-level FUSE kernel extension first:
+
+- [macOS FUSE Setup](/home/setup/macos), macFUSE + kernel extension + Apple Silicon recovery mode steps.
+- [Linux FUSE Setup](/home/setup/linux), `fuse3` install and `/etc/fuse.conf`.
+
+## Install Mirage with the FUSE Extra
+
+```bash
+pip install "mirage-ai[fuse]"
+```
+
+Or with uv:
+
+```bash
+uv add "mirage-ai[fuse]"
+```
+
+## Verify
+
+```python
+from mirage import Workspace, MountMode
+from mirage.resource.ram import RAMResource
+
+with Workspace(
+    {"/data": RAMResource()},
+    mode=MountMode.WRITE,
+    fuse=True,
+) as ws:
+    print("mountpoint:", ws.fuse_mountpoint)
+```
+
+If the printed path exists under `/tmp/mirage-*`, FUSE is wired up correctly.

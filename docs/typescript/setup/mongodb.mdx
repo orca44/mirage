@@ -1,0 +1,60 @@
+---
+title: MongoDB
+icon: database
+description: Mount a MongoDB cluster as a Mirage filesystem of databases, collections, and documents.
+---
+
+`MongoDBResource` exposes a MongoDB connection as a read-only filesystem: databases at the top level, collections inside, individual documents at the leaves.
+
+Setup steps for the connection URI live at [MongoDB Credentials](/home/setup/mongodb).
+
+## Node
+
+```bash
+pnpm add @struktoai/mirage-node mongodb
+```
+
+```ts
+import { MongoDBResource, MountMode, Workspace } from '@struktoai/mirage-node'
+
+const mongo = new MongoDBResource({
+  uri: process.env.MONGO_URI!,
+  databases: ['app', 'analytics'],
+})
+
+const ws = new Workspace({ '/mongo': mongo }, { mode: MountMode.READ })
+await ws.execute('ls /mongo/app/users/')
+```
+
+## Browser
+
+```bash
+pnpm add @struktoai/mirage-browser
+```
+
+The browser variant routes Mongo operations through an HTTP driver (no direct DB connection from the page). The browser examples ship a `mongo_proxy` Vite plugin that forwards to a server-side `mongodb` driver:
+
+```ts
+import { MongoDBResource, MountMode, Workspace } from '@struktoai/mirage-browser'
+
+const mongo = new MongoDBResource({
+  uri: 'mongodb-proxy://app',
+  httpDriver: { fetch: window.fetch },
+})
+```
+
+## Config
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `uri` | required | Mongo connection URI. Redacted in snapshots. |
+| `databases` | none | Optional allowlist of database names. |
+| `defaultDocLimit` | `100` | Default page size for ad-hoc reads. |
+| `defaultSearchLimit` | `100` | Default page size for search-style queries. |
+| `maxDocLimit` | `10_000` | Hard ceiling per read. |
+
+## Mount mode
+
+`read`.
+
+For the database/collection/document layout see the [Python MongoDB docs](/python/resource/mongodb).

@@ -1,0 +1,138 @@
+---
+title: OCI Object Storage
+icon: server
+description: Set up Oracle Cloud Object Storage as a MIRAGE resource from Node or the browser.
+---
+
+OCI's S3 Compatibility API accepts AWS Signature V4 against `https://<namespace>.compat.objectstorage.<region>.oci.customer-oci.com`. MIRAGE derives this endpoint from your namespace + region automatically.
+
+Credentials (bucket, namespace, region, customer secret key pair) are created the same way in both runtimes, see [OCI Credentials](/home/setup/oci).
+
+## Node (server-side)
+
+```bash
+pnpm add @struktoai/mirage-node
+```
+
+```ts
+import { MountMode, OCIResource, Workspace } from '@struktoai/mirage-node'
+
+const oci = new OCIResource({
+  bucket: process.env.OCI_BUCKET!,
+  namespace: process.env.OCI_NAMESPACE!,
+  region: process.env.OCI_REGION!,
+  accessKeyId: process.env.OCI_ACCESS_KEY_ID!,
+  secretAccessKey: process.env.OCI_SECRET_ACCESS_KEY!,
+})
+
+const ws = new Workspace({ '/bucket/': oci }, { mode: MountMode.READ })
+const res = await ws.execute('ls /bucket/')
+console.log(res.stdoutText)
+```
+
+## Browser (presigned URLs)
+
+```bash
+pnpm add @struktoai/mirage-browser
+```
+
+The browser `OCIResource` is secret-free, your backend signs each operation using your OCI customer secret keys and returns a URL. OCI's S3-compat endpoint accepts AWS Signature V4, so `@aws-sdk/s3-request-presigner` works, pointed at the OCI endpoint.
+
+### 1. Server: sign URLs with the OCI endpoint
+
+```ts
+import {
+  CopyObjectCommand,
+  DeleteObjectCommand,
+  GetObjectCommand,
+  HeadObjectCommand,
+  ListObjectsV2Command,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3'
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
+
+const NAMESPACE = process.env.OCI_NAMESPACE!
+const REGION = process.env.OCI_REGION!
+
+const client = new S3Client({
+  region: REGION,
+  endpoint: `https://${NAMESPACE}.compat.objectstorage.${REGION}.oci.customer-oci.com`,
+  forcePathStyle: true,
+  credentials: {
+    accessKeyId: process.env.OCI_ACCESS_KEY_ID!,
+    secretAccessKey: process.env.OCI_SECRET_ACCESS_KEY!,
+  },
+})
+const BUCKET = process.env.OCI_BUCKET!
+
+app.post('/presign/oci', async (req, res) => {
+  const { path, op, opts } = req.body
+  const key = path.replace(/^\/+/, '')
+  const ttl = typeof opts?.ttlSec === 'number' ? opts.ttlSec : 300
+  let cmd
+  switch (op) {
+    case 'GET':    cmd = new GetObjectCommand({ Bucket: BUCKET, Key: key }); break
+    case 'PUT':    cmd = new PutObjectCommand({ Bucket: BUCKET, Key: key, ContentType: opts?.contentType }); break
+    case 'HEAD':   cmd = new HeadObjectCommand({ Bucket: BUCKET, Key: key }); break
+    case 'DELETE': cmd = new DeleteObjectCommand({ Bucket: BUCKET, Key: key }); break
+    case 'LIST':   cmd = new ListObjectsV2Command({
+      Bucket: BUCKET,
+      Prefix: opts?.listPrefix,
+      Delimiter: opts?.listDelimiter,
+      ContinuationToken: opts?.listContinuationToken,
+    }); break
+    case 'COPY':   cmd = new CopyObjectCommand({
+      Bucket: BUCKET,
+      Key: key,
+      CopySource: `${BUCKET}/${opts?.copySource}`,
+    }); break
+  }
+  res.json({ url: await getSignedUrl(client, cmd, { expiresIn: ttl }) })
+})
+```
+
+<Warning>
+OCI requires **path-style** URLs (`forcePathStyle: true`), virtual-hosted style is not supported on the S3 Compatibility API.
+</Warning>
+
+### 2. Browser: wire it up
+
+```ts
+import { MountMode, OCIResource, Workspace } from '@struktoai/mirage-browser'
+
+const oci = new OCIResource({
+  bucket: 'my-oci-bucket',
+  namespace: 'idsiqbdbcr4i',
+  region: 'us-ashburn-1',
+  presignedUrlProvider: async (path, op, opts) => {
+    const r = await fetch('/presign/oci', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path, op, opts }),
+    })
+    const { url } = await r.json()
+    return url
+  },
+})
+
+const ws = new Workspace({ '/bucket/': oci }, { mode: MountMode.READ })
+```
+
+### 3. CORS
+
+OCI's S3-compatibility endpoint ships with **permissive default CORS rules** that echo back whatever `Origin` the browser sends, so local dev typically "just works" without any bucket configuration.
+
+For production origins you can tighten the policy through the OCI Console (Bucket → Pre-Authenticated Requests / CORS) or via the native OCI CLI:
+
+```bash
+oci os bucket update --bucket-name $OCI_BUCKET \
+  --namespace $OCI_NAMESPACE \
+  --cors-rules '[{"allowedOrigins":["https://app.example.com"],"allowedMethods":["GET","PUT","HEAD","DELETE","POST"],"allowedHeaders":["*"],"exposedHeaders":["ETag","Content-Length","Content-Type","Last-Modified"],"maxAgeInSeconds":3000}]'
+```
+
+<Note>
+OCI's CORS is **not** configurable via the S3-compat `PutBucketCors` call, the schema differs. Use the native OCI Console or CLI.
+</Note>
+
+See [Python OCI Setup](/python/setup/oci) for the equivalent Python wiring.

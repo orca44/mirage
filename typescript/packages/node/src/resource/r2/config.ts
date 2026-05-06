@@ -1,0 +1,88 @@
+// ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+// ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
+import { normalizeFields } from '@struktoai/mirage-core'
+import type { S3Config } from '../s3/config.ts'
+
+export interface R2Config {
+  bucket: string
+  accessKeyId: string
+  secretAccessKey: string
+  accountId?: string
+  endpoint?: string
+  region?: string
+  profile?: string
+  timeoutMs?: number
+}
+
+export interface R2ConfigRedacted {
+  bucket: string
+  accessKeyId: string
+  secretAccessKey: string
+  accountId?: string
+  endpoint: string
+  region: string
+  profile?: string
+  timeoutMs?: number
+}
+
+export function resolvedR2Endpoint(config: R2Config): string {
+  if (config.endpoint !== undefined && config.endpoint !== '') return config.endpoint
+  if (config.accountId !== undefined && config.accountId !== '') {
+    return `https://${config.accountId}.r2.cloudflarestorage.com`
+  }
+  throw new Error('R2Config requires accountId or endpoint')
+}
+
+export function r2ToS3Config(config: R2Config): S3Config {
+  return {
+    bucket: config.bucket,
+    region: config.region ?? 'auto',
+    endpoint: resolvedR2Endpoint(config),
+    accessKeyId: config.accessKeyId,
+    secretAccessKey: config.secretAccessKey,
+    ...(config.profile !== undefined ? { profile: config.profile } : {}),
+    ...(config.timeoutMs !== undefined ? { timeoutMs: config.timeoutMs } : {}),
+  }
+}
+
+export function redactR2Config(config: R2Config): R2ConfigRedacted {
+  return {
+    bucket: config.bucket,
+    accessKeyId: '<REDACTED>',
+    secretAccessKey: '<REDACTED>',
+    ...(config.accountId !== undefined ? { accountId: config.accountId } : {}),
+    endpoint: resolvedR2Endpoint(config),
+    region: config.region ?? 'auto',
+    ...(config.profile !== undefined ? { profile: config.profile } : {}),
+    ...(config.timeoutMs !== undefined ? { timeoutMs: config.timeoutMs } : {}),
+  }
+}
+
+export function normalizeR2Config(input: Record<string, unknown>): R2Config {
+  return normalizeFields(input, {
+    rename: {
+      account_id: 'accountId',
+      access_key_id: 'accessKeyId',
+      secret_access_key: 'secretAccessKey',
+      aws_profile: 'profile',
+      endpoint_url: 'endpoint',
+      timeout: 'timeoutMs',
+    },
+    transform: {
+      timeout: (v: unknown) => (typeof v === 'number' ? v * 1000 : v),
+    },
+    drop: ['proxy'],
+  }) as unknown as R2Config
+}

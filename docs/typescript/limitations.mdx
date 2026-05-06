@@ -1,0 +1,254 @@
+---
+title: Limitations
+icon: triangle-exclamation
+description: Runtime-specific constraints in the TypeScript SDK (Node and Browser) and how to work around them.
+---
+
+Most of Mirage's behavior is identical across Python and TypeScript. The two TS runtimes (Node and Browser) each impose a handful of constraints that don't exist in Python. All are documented here so you can plan around them before they surprise you in production.
+
+<Note>
+  `python3` has its own set of WASM-runtime-level divergences from Python Mirage's subprocess model. See [Python](/typescript/python#limitations) for the full list.
+</Note>
+
+## Node
+
+### 1. Same-process FUSE + `nativeExec` deadlocks
+
+**The problem.** Node.js runs on a single event loop. [`@zkochan/fuse-native`](https://www.npmjs.com/package/@zkochan/fuse-native)'s napi callbacks are dispatched on that same loop, and so is the `await proc` you get from `child_process.spawn`. If your process both **hosts the FUSE mount** and **spawns a subprocess that reads from that mount**, the loop can't service both: the subprocess stdio promise is waiting for the loop, and the loop is waiting for a FUSE callback that the kernel is blocked on. Everything freezes.
+
+```ts
+const ws = new Workspace(
+  { '/data/': new RAMResource() },
+  { mode: MountMode.WRITE, fuse: true },
+)
+await ws.execute('echo hello | tee /data/x.txt')
+
+// ⚠️ DEADLOCK, we own the mount AND we're spawning a subprocess that touches it
+await ws.execute('cat /data/x.txt', { native: true })
+```
+
+**What Mirage does.** When `execute({ native: true })` is called on a workspace whose FUSE mount is owned in-process, Mirage throws a descriptive error instead of hanging:
+
+```
+native=true with a same-process FUSE mount would deadlock
+(Node single event loop). Workarounds:
+  1. Mount FUSE in a helper process; call nativeExec from this process.
+  2. Point nativeExec at a mountpoint created by another tool
+     (then call ws.setFuseMountpoint(path) without using FuseManager).
+  3. Use execute() without native=true (virtual executor is in-process safe).
+```
+
+**Workarounds.**
+
+<AccordionGroup>
+  <Accordion title="Helper process hosts the mount" icon="1">
+    The main process stays lean and spawns subprocesses freely. A second Node process mounts FUSE and just stays alive serving it.
+
+    ```ts
+    // helper.ts, long-running, owns the mount
+    const ws = new Workspace({ '/data/': new RAMResource() }, { mode: MountMode.WRITE, fuse: true })
+    await ws.execute('echo seed | tee /data/x.txt')
+    console.log(ws.fuseMountpoint) // print the path for the parent
+    process.stdin.resume()          // block until killed
+
+    // main.ts, spawns subprocesses freely
+    const helper = spawn('tsx', ['helper.ts'])
+    const mp = await readFirstLineOfStdout(helper)
+    const r = await nativeExec('cat data/x.txt', { cwd: mp })
+    helper.kill()
+    ```
+  </Accordion>
+  <Accordion title="Point at an externally mounted FS" icon="2">
+    Another tool (a prior Mirage daemon, `sshfs`, a sibling Go/Python service) already mounted something. Your Node process just references the path.
+
+    ```ts
+    const ws = new Workspace({ '/data/': new RAMResource() })
+    ws.setFuseMountpoint('/mnt/external-fuse')  // { owned: false } by default
+    // No FuseManager in this process → no napi callbacks on this event loop → safe
+    await ws.execute('cat /mnt/external-fuse/data/x.txt', { native: true })
+    ```
+  </Accordion>
+  <Accordion title="Stay virtual" icon="3">
+    Drop `native: true` and let the virtual executor handle the command. Every builtin (`cat`, `grep`, `jq`, `awk`, etc.) is reimplemented in-process, so pipes and redirects work without any real subprocess.
+
+    ```ts
+    const ws = new Workspace({ '/data/': new RAMResource() }, { mode: MountMode.WRITE, fuse: true })
+    await ws.execute('cat /data/x.txt | grep hello')  // no native, no deadlock
+    ```
+  </Accordion>
+</AccordionGroup>
+
+**Why Python doesn't hit this.** Python's FUSE implementation runs on a real OS `threading.Thread` (daemon). FUSE callbacks happen on that thread; the asyncio loop running `native_exec` runs on the main thread. Two threads, two contexts, no deadlock.
+
+**Possible future fix.** Running `@zkochan/fuse-native` inside a Node `worker_threads` worker would give us the same main-thread-plus-FUSE-thread topology as Python. The workspace state would need to be reachable from the worker (either mirrored via `MessageChannel` or fully relocated), which is a sizeable refactor. Until then, use one of the three workarounds above.
+
+---
+
+### 2. `fs-monkey` only patches CJS `require('fs')`, not ESM `node:fs`
+
+**The problem.** `patchNodeFs()` routes `fs` calls through the workspace VFS so that third-party libraries "just work" against mounted paths. It works by replacing `require.cache`'s `fs` entry (a CJS-only mechanism). ESM is fundamentally different:
+
+- `import { readFile } from 'node:fs/promises'` resolves at parse time to V8's internal binding.
+- There is no public hook to replace that binding after the fact.
+- Loader hooks (`--loader=…`) could intercept the resolution, but they're a build-time decision, not a runtime monkey-patch.
+
+**What this means in practice.**
+
+```ts
+// ✅ Works, this is CJS and goes through require('fs')
+const { readFileSync } = require('fs')
+patchNodeFs(ws)
+readFileSync('/data/x.txt')  // routes through RAM resource
+
+// ❌ Does not work, this is ESM and bypasses the patch
+import { readFileSync } from 'node:fs'
+patchNodeFs(ws)
+readFileSync('/data/x.txt')  // hits the real filesystem, throws ENOENT
+```
+
+**Why Python doesn't hit this.** Python has no equivalent concept of "ESM vs CJS". `with Workspace() as ws:` swaps `builtins.open` and `sys.modules["os"]`: one set of mutable globals, one patch point, works for every caller.
+
+**Workarounds.**
+
+<Tabs>
+  <Tab title="Use FUSE instead">
+    If you want ESM-imported `node:fs` to see your mounted data, expose the workspace as a real filesystem. Mount FUSE, then every `fs` call, ESM or CJS, goes through the kernel.
+
+    ```ts
+    const ws = new Workspace({ '/data/': new RAMResource() }, { fuse: true })
+    import { readFile } from 'node:fs/promises'
+    const bytes = await readFile(`${ws.fuseMountpoint}/data/x.txt`)
+    ```
+  </Tab>
+  <Tab title="Use Mirage's VFS API directly">
+    The most reliable approach: call `ws.execute()` or the resource methods. No magic, no monkey-patching, works from ESM or CJS.
+
+    ```ts
+    const res = await ws.execute('cat /data/x.txt')
+    const bytes = res.stdout
+    ```
+  </Tab>
+  <Tab title="Restrict your code to CJS">
+    If you really need `fs` patching to work, keep the consuming code in CJS. Note that most modern Node projects default to ESM, so this is a narrow escape hatch.
+
+    ```js
+    // package.json: no "type": "module"
+    const { readFileSync } = require('fs')
+    ```
+  </Tab>
+</Tabs>
+
+**Possible future fix.** A published Node loader hook that resolves `node:fs` through the workspace would remove the ESM limitation, at the cost of forcing consumers to opt into the loader (`node --loader @struktoai/mirage-node/loader main.mjs`). Not planned currently.
+
+---
+
+### 3. FUSE files from API-backed resources cap at 100 MiB
+
+**The problem.** API-backed resources (Trello, Linear, Slack, etc.) return `stat.size = null` because the byte size isn't known until the API has been called. Python passes `direct_io=True` to libfuse at mount time so the kernel ignores reported size and issues `read()` until it returns 0 (Slack's daily history can be tens of MB and it just works).
+
+`@zkochan/fuse-native` doesn't expose `direct_io`. There's no per-file flag (the `open` C bridge can only return `fh`, not modify `fuse_file_info.direct_io`), and the `-o direct_io` mount option is rejected by macFUSE/libosxfuse and crashes the channel. So when Mirage's FUSE layer hits a `size=null` file, it has to report **some** non-zero size to make the kernel issue reads, otherwise `cat board.json` would print empty.
+
+We report a 100 MiB sentinel. The read handler returns 0 past the actual data length, so `cat`, `wc -c`, and friends correctly see EOF for files smaller than the sentinel. **Files larger than 100 MiB get truncated.**
+
+**What this means in practice.**
+
+```ts
+const ws = new Workspace({ '/slack/': new SlackResource({ apiKey }) }, { fuse: true })
+// ✅ Works, most channels have <100 MiB of daily history
+await readFile(`${ws.fuseMountpoint}/slack/channels/general/2026-04-12.jsonl`)
+
+// ⚠️ Truncated to 100 MiB if the actual day exceeds it
+await readFile(`${ws.fuseMountpoint}/slack/channels/super-busy-channel/2026-04-12.jsonl`)
+```
+
+`ls -l` shows `100M` for any unfetched API-backed file. Once a file has been opened, the real size is cached and subsequent `ls -l` shows the actual byte count.
+
+The cap exists because Node's `fs/promises.readFile` allocates a Buffer of the reported size and decodes it as utf-8 at the end; V8's string length limit is ~512 MiB, so a larger sentinel throws `RangeError: Invalid string length` (which is what you'd hit before any real read).
+
+**Why Python doesn't hit this.** Python's `mfusepy` accepts `direct_io=True` and passes it to libfuse2 as a mount option. macFUSE supports it through that path even though it rejects the same option from `@zkochan/fuse-native`'s option string. With direct_io enabled, the kernel doesn't care what size getattr reports.
+
+**Workarounds.**
+
+<Tabs>
+  <Tab title="Read via the VFS API">
+    The Mirage VFS doesn't go through FUSE at all (no sentinel, no truncation). Use this for any file that might exceed 100 MiB.
+
+    ```ts
+    const bytes = await ws.fs.readFile('/slack/channels/super-busy-channel/2026-04-12.jsonl')
+    // Or via shell:
+    const res = await ws.execute('cat /slack/channels/super-busy-channel/2026-04-12.jsonl')
+    ```
+  </Tab>
+  <Tab title="Process incrementally">
+    For Slack history specifically, narrow the date or use a more targeted command (`grep`, `jq`, line-count stats) so the result fits well under the cap.
+
+    ```ts
+    await ws.execute('jq -r ".text" /slack/channels/general/2026-04-12.jsonl')
+    ```
+  </Tab>
+</Tabs>
+
+**Possible future fix.** Patch `@zkochan/fuse-native`'s C bridge to set `info->direct_io = 1` in the `open` callback (a one-line change applied via `pnpm patch`). That achieves Python parity and removes the 100 MiB cap entirely. Tracked but not yet implemented.
+
+---
+
+## Browser
+
+The browser SDK runs entirely in-page: no kernel, no subprocesses, no Node `fs`. That removes the Node sections above (none of FUSE, `nativeExec`, or `fs-monkey` apply) but introduces its own constraints.
+
+### 1. No FUSE, no `native: true`
+
+Browsers can't mount filesystems and can't `child_process.spawn`. `Workspace({ fuse: true })` and `ws.execute(..., { native: true })` throw on construction. Use `ws.execute(...)` (virtual executor) and `ws.fs.readFile/writeFile` instead. Every builtin (`cat`, `grep`, `jq`, `awk`, `python3`, etc.) is reimplemented in-process, so most agent code paths work unchanged from Node.
+
+### 2. OPFS quotas and persistence
+
+`OPFSResource` writes through the [Origin Private File System](https://web.dev/articles/origin-private-file-system). Two things to know:
+
+- **Storage quota.** The browser sets per-origin quotas (typically a fraction of free disk, single-digit GB on most setups). Hitting it raises `QuotaExceededError`. Call `navigator.storage.estimate()` to inspect.
+- **Eviction.** Origins that aren't [persisted](https://web.dev/articles/persistent-storage) can be cleared by the browser under storage pressure. For long-lived workspaces, request `navigator.storage.persist()` early.
+
+### 3. CORS for HTTP-backed resources
+
+Mounts that hit third-party APIs (S3, GitHub, Linear, etc.) make `fetch` calls from the page. Anything not configured to allow your origin via CORS will fail with the usual browser error. Workarounds:
+
+- **Browser-native auth flows.** Resources like Box, Dropbox, GDrive, GDocs ship PKCE OAuth examples that work entirely in-browser.
+- **Pre-signed URLs.** For S3/R2/GCS, generate pre-signed URLs server-side and pass them in. The Mirage browser examples include a Vite dev-server `presigner` plugin as reference.
+- **Same-origin proxy.** Stand up a tiny proxy on your own domain that forwards to the upstream API with the right auth headers.
+
+### 4. Python writes need JSPI
+
+The Python FS shim (`open()` against mounted paths) flushes writes back through an async bridge. That requires [JSPI](https://github.com/WebAssembly/js-promise-integration). Reads of preloaded files still work without it, but `close()` on a write throws `RuntimeError: Cannot stack switch`.
+
+- **Chrome / Edge 137+** (May 2025): works out of the box.
+- **Firefox**: behind `javascript.options.wasm_js_promise_integration`.
+- **Safari**: not yet shipped.
+
+See [Python FS shim](/typescript/python-fs#runtime-requirements) for the full matrix.
+
+### 5. No SSH, Postgres, MongoDB, Email, FUSE peers
+
+These resources are only exposed by `@struktoai/mirage-node` because their drivers are Node-only. Importing them from `@struktoai/mirage-browser` is a build error. For browser apps, route those reads through your backend (or use the HTTP-driver variants where they exist, e.g. MongoDB via the bundled mongo-proxy in the examples).
+
+---
+
+## Quick reference
+
+| Scenario | Runtime | Status |
+|---|---|---|
+| `nativeExec()` standalone (no FUSE) | Node | ✅ works |
+| `ws.execute({ native: true })` with no FUSE mount | Node | ✅ falls back to virtual executor |
+| `ws.execute({ native: true })` against an **external** FUSE mount | Node | ✅ works (no in-process FUSE callbacks) |
+| `ws.execute({ native: true })` against a **self-owned** FUSE mount | Node | ❌ raises early with workarounds |
+| `patchNodeFs()` with `require('fs')` (CJS) | Node | ✅ works |
+| `patchNodeFs()` with `import from 'node:fs'` (ESM) | Node | ❌ silently bypassed; use FUSE or the VFS API |
+| FUSE `cat` of a Trello/Linear/Slack file ≤ 100 MiB | Node | ✅ works |
+| FUSE `cat` of an API-backed file > 100 MiB | Node | ❌ truncated; use `ws.fs.readFile` or `ws.execute('cat …')` |
+| `ws.execute(...)` virtual builtins | Browser | ✅ works |
+| `Workspace({ fuse: true })` or `{ native: true }` | Browser | ❌ throws; not supported |
+| OPFS reads/writes within quota | Browser | ✅ works |
+| OPFS over quota | Browser | ❌ `QuotaExceededError`; check `navigator.storage.estimate()` |
+| HTTP-backed resources without CORS allow-list | Browser | ❌ blocked; use PKCE, presigned URLs, or a same-origin proxy |
+| Python `open()` writes back through mount | Browser | ✅ with JSPI (Chrome 137+); ❌ otherwise |
+| `@struktoai/mirage-node`-only resources (SSH, Postgres, MongoDB, Email, FUSE) | Browser | ❌ Node-only drivers |
+
+The Node limitations are runtime-level, not Mirage design decisions. Python's equivalent behavior is strictly better in each case, so if a workflow absolutely requires same-process FUSE + native exec, ESM-level `fs` patching, or large API-backed FUSE reads, consider whether the Python SDK fits better for that specific piece. The Browser limitations are by design (no kernel, no subprocess), so the workarounds there are about choosing the right runtime for the task.

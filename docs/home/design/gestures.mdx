@@ -1,0 +1,72 @@
+---
+title: Commands are Gestures
+description: Why Mirage treats its command catalog as the Gesture layer, built on top of Fingers, and how gestures differ from higher-level agent Skills.
+icon: hand-sparkles
+---
+
+## Gestures Sit On Top Of Fingers
+
+<Icon icon="hand-point-up" /> **[Fingers](/home/design/fingers)** are the primitive ops, `read`, `readdir`, `stat`, `write`. <Icon icon="hard-drive" /> **[FUSE](/home/design/fuse)** is the infrastructure that makes those fingers available to every process on the host. **Gestures** are what Mirage builds on top: the commands an agent actually names.
+
+`cat`, `grep`, `ls`, `head`, `tail`, `cp`, `mv`, `jq`, `awk`, `sed`, each is a gesture. A gesture is a single coordinated motion composed from one or more fingers, with a name the [Brain](/home/concepts) can call directly.
+
+## The Layered Picture
+
+| Layer | What it is | Example |
+| ----- | ---------- | ------- |
+| **Fundamental** | Fingers (ops) + FUSE | `read`, `readdir`, `stat`; the POSIX mount surface |
+| **Gestures** | Named commands composed from fingers | `cat`, `grep`, `cp`, `jq` |
+| **Shell** | The glue that chains gestures | `cat x \| grep y \| head` |
+
+The fundamental layer is small on purpose. A handful of fingers plus a FUSE mount is all a backend needs to become part of Mirage. Every gesture in the catalog then works against that backend automatically, because gestures talk to fingers, not to backend SDKs.
+
+## Why Call Them Gestures
+
+A gesture is *one coordinated motion*. That is the right size for `cat` (read a path), `cp` (move bytes from A to B), or `grep` (read-and-filter). Each is a single recognizable move the Hand performs, not a plan, not a workflow, just one gesture.
+
+The word also keeps the anatomical metaphor coherent. Fingers make gestures. Hands express themselves through sequences of gestures. The vocabulary stays inside one register.
+
+## Gestures Versus Skills
+
+Mirage gestures are deliberately atomic. They correspond to the Unix command tradition: small, composable, one job per gesture.
+
+**Skills**, as used by [Anthropic Agent Skills](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview) and the broader [agent-skill open standard](https://github.com/anthropics/skills), are a higher-level unit. A skill bundles instructions, scripts, and resources an agent can load to perform a *complex* task end to end: "format this spreadsheet," "write a professional letter," "analyze this dataset." Skills compose many gestures (plus reasoning, plus external knowledge) into a workflow.
+
+| | Gesture | Skill |
+| --- | --- | --- |
+| **Size** | One motion | A workflow |
+| **Example** | `grep`, `cat`, `cp` | "summarize this CSV", "format this pitch deck" |
+| **Where it lives** | Mirage command catalog | Agent harness (Claude Code, Claude SDK, etc.) |
+| **Who composes it** | Shell pipelines, control flow | Agent reasoning + tool use |
+
+A useful mental model: gestures are *what the Hand can do*; skills are *what the Brain has learned to do with sequences of gestures*. Mirage owns the gesture layer. Skill-level composition is the agent harness's job.
+
+See [Anthropic's engineering post on Agent Skills](https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills) for more on the skill concept.
+
+## Adding A Gesture
+
+A new gesture is a registered function that receives resolved paths and arguments, uses fingers to read or write, and returns a byte stream. See [Commands](/home/design/commands) for the dispatch model and [Command Spec](/home/design/commandspec) for how a gesture declares its flags and operands.
+
+Because every gesture is built on fingers, adding one does not require resource-specific code. It works against every backend that implements the finger set.
+
+## Why The Split Matters
+
+Splitting **Fingers (fundamental)** from **Gestures (composed)** is what lets Mirage scale:
+
+- Backends implement fingers. They do not need to know any gesture exists.
+- Gestures compose fingers. They do not need to know any backend exists.
+- New backend: every existing gesture works automatically.
+- New gesture: every existing backend is already a viable target.
+
+This is the concrete mechanism behind Mirage's *N + M* promise. Fingers are the small M-side interface every backend speaks; gestures are the N-side catalog the agent draws from. The catalog grows without churning the backends, and the backends grow without changing the catalog.
+
+## Handshakes: Gestures Across Two Resources
+
+When a gesture reaches across two resources, `cp /s3/a /gdrive/b`, `diff /ram/a /disk/b`, `cat /s3/a /github/b`, it becomes a <Icon icon="handshake" /> **[Handshake](/home/design/handshakes)**. Still a gesture, but one the Hand performs by using two fingers on two different Eyes at once. The dispatcher handles the coordination; see the dedicated page for how.
+
+## Related
+
+- [Fingers](/home/design/fingers), the primitive gestures' building blocks.
+- [Handshakes](/home/design/handshakes), gestures that cross two resources.
+- [Commands](/home/design/commands), the dispatch model for registering and resolving gestures.
+- [Command Spec](/home/design/commandspec), how a gesture declares its flags and operands.

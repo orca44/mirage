@@ -1,0 +1,126 @@
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
+from unittest.mock import AsyncMock, patch
+
+import pytest
+
+from mirage.accessor.github_ci import GitHubCIAccessor
+from mirage.cache.index.ram import RAMIndexCacheStore
+from mirage.commands.builtin.github_ci.rg import rg
+from mirage.resource.github_ci.config import GitHubCIConfig
+from mirage.types import FileStat, FileType, PathSpec
+
+
+@pytest.fixture
+def accessor():
+    return GitHubCIAccessor(
+        config=GitHubCIConfig(token="t", owner="o", repo="r"))
+
+
+@pytest.fixture
+def index():
+    return RAMIndexCacheStore()
+
+
+def _scope(path: str, prefix: str = "") -> PathSpec:
+    return PathSpec(original=path, directory=path, prefix=prefix)
+
+
+@pytest.mark.asyncio
+async def test_rg_single_file_match(accessor, index):
+    file_stat = FileStat(name="run.json", type=FileType.JSON)
+    with (
+            patch("mirage.commands.builtin.github_ci.rg._stat",
+                  new=AsyncMock(return_value=file_stat)),
+            patch("mirage.commands.builtin.github_ci.rg.ci_read",
+                  new=AsyncMock(return_value=b"alpha\nbeta\ngamma\n")),
+    ):
+        out, io = await rg(
+            accessor,
+            [_scope("/runs/wf_1/run.json")],
+            "beta",
+            index=index,
+        )
+        assert b"beta" in out
+        assert io.exit_code == 0
+
+
+@pytest.mark.asyncio
+async def test_rg_no_match_exit_one(accessor, index):
+    file_stat = FileStat(name="run.json", type=FileType.JSON)
+    with (
+            patch("mirage.commands.builtin.github_ci.rg._stat",
+                  new=AsyncMock(return_value=file_stat)),
+            patch("mirage.commands.builtin.github_ci.rg.ci_read",
+                  new=AsyncMock(return_value=b"abc\ndef\n")),
+    ):
+        _, io = await rg(
+            accessor,
+            [_scope("/runs/wf_1/run.json")],
+            "missing",
+            index=index,
+        )
+        assert io.exit_code == 1
+
+
+@pytest.mark.asyncio
+async def test_rg_directory_implicit_recursive(accessor, index):
+    dir_stat = FileStat(name="workflows", type=FileType.DIRECTORY)
+    file_stat = FileStat(name="ci.json", type=FileType.JSON)
+
+    async def fake_stat(_acc, p, _idx):
+        if p.original.endswith(".json"):
+            return file_stat
+        return dir_stat
+
+    async def fake_readdir(_acc, p, _idx):
+        if p.original == "/workflows":
+            return ["/workflows/ci_1.json", "/workflows/build_2.json"]
+        return []
+
+    async def fake_read(_acc, p, _idx):
+        if "ci_1" in p.original:
+            return b"name: Test\non: push\n"
+        return b"name: Build\non: push\n"
+
+    with (
+            patch("mirage.commands.builtin.github_ci.rg._stat",
+                  new=AsyncMock(side_effect=fake_stat)),
+            patch("mirage.commands.builtin.github_ci.rg._readdir",
+                  new=AsyncMock(side_effect=fake_readdir)),
+            patch("mirage.commands.builtin.github_ci.rg.ci_read",
+                  new=AsyncMock(side_effect=fake_read)),
+    ):
+        out, io = await rg(
+            accessor,
+            [_scope("/workflows")],
+            "Test",
+            index=index,
+        )
+        assert b"name: Test" in out
+        assert io.exit_code == 0
+
+
+@pytest.mark.asyncio
+async def test_rg_stdin(accessor, index):
+    out, io = await rg(
+        accessor,
+        [],
+        "two",
+        stdin=b"line one\nline two\nline three\n",
+        index=index,
+    )
+    assert b"line two" in out
+    assert io.exit_code == 0

@@ -1,0 +1,28 @@
+---
+title: Cloudflare R2
+icon: cloud
+description: Set up Cloudflare R2 credentials for the R2 resource.
+---
+
+## Credentials
+
+### 1. Create R2 API Token
+
+1. Go to https://dash.cloudflare.com/ -> **R2 Object Storage**
+1. **Manage R2 API Tokens** -> **Create API Token**
+1. Set permissions: **Object Read** (or **Object Read & Write**)
+1. Scope to your bucket
+1. Copy the **Access Key ID** and **Secret Access Key**
+1. Note your **Account ID** from the Cloudflare dashboard URL
+
+### 2. Set Environment Variables
+
+```bash
+# .env.development
+R2_BUCKET=my-bucket
+R2_ACCOUNT_ID=abc123...
+R2_ACCESS_KEY_ID=...
+R2_SECRET_ACCESS_KEY=...
+```
+
+For Python configuration, see the [Python R2 Setup](/python/setup/r2) guide.

@@ -1,0 +1,105 @@
+// ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+// ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
+import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import dotenv from 'dotenv'
+import { MountMode, TrelloResource, Workspace, type TrelloConfig } from '@struktoai/mirage-node'
+
+const __HERE = fileURLToPath(new URL('.', import.meta.url))
+dotenv.config({ path: resolve(__HERE, '../../../.env.development') })
+
+function buildConfig(): TrelloConfig {
+  const apiKey = process.env.TRELLO_API_KEY
+  const apiToken = process.env.TRELLO_API_TOKEN
+  if (apiKey === undefined || apiKey === '') {
+    throw new Error('TRELLO_API_KEY env var is required')
+  }
+  if (apiToken === undefined || apiToken === '') {
+    throw new Error('TRELLO_API_TOKEN env var is required')
+  }
+  return { apiKey, apiToken }
+}
+
+async function run(ws: Workspace, cmd: string): Promise<string> {
+  console.log(`$ ${cmd}`)
+  const r = await ws.execute(cmd)
+  if (r.exitCode !== 0 && r.stderrText !== '') {
+    console.log(`  STDERR: ${r.stderrText.slice(0, 200)}`)
+  }
+  const out = r.stdoutText.replace(/\s+$/, '')
+  if (out !== '') {
+    for (const line of out.split('\n').slice(0, 10)) console.log(`  ${line.slice(0, 200)}`)
+  }
+  return out
+}
+
+async function main(): Promise<void> {
+  const ws = new Workspace({ '/trello': new TrelloResource(buildConfig()) }, { mode: MountMode.READ })
+  try {
+    console.log('=== ls /trello/ ===')
+    await run(ws, 'ls /trello/')
+
+    console.log('\n=== ls /trello/workspaces/ ===')
+    const ws0 = (await run(ws, 'ls /trello/workspaces/ | head -n 1')).trim()
+    if (ws0 === '') {
+      console.log('no workspaces')
+      return
+    }
+    const wsBase = `/trello/workspaces/${ws0}`
+
+    console.log(`\n=== tree -L 3 ${wsBase} ===`)
+    await run(ws, `tree -L 3 "${wsBase}"`)
+
+    console.log(`\n=== cat ${wsBase}/workspace.json ===`)
+    await run(ws, `cat "${wsBase}/workspace.json"`)
+
+    console.log(`\n=== ls ${wsBase}/boards/ ===`)
+    const b0 = (await run(ws, `ls "${wsBase}/boards/" | head -n 1`)).trim()
+    if (b0 === '') return
+    const boardBase = `${wsBase}/boards/${b0}`
+
+    console.log(`\n=== cat ${b0}/board.json ===`)
+    await run(ws, `cat "${boardBase}/board.json"`)
+
+    console.log(`\n=== jq -r '.board_name' board.json ===`)
+    await run(ws, `jq -r ".board_name" "${boardBase}/board.json"`)
+
+    console.log(`\n=== ls ${b0}/labels/ ===`)
+    await run(ws, `ls "${boardBase}/labels/"`)
+
+    console.log(`\n=== ls ${b0}/lists/ ===`)
+    const l0 = (await run(ws, `ls "${boardBase}/lists/" | head -n 1`)).trim()
+    if (l0 === '') return
+
+    console.log(`\n=== ls ${l0}/cards/ ===`)
+    await run(ws, `ls "${boardBase}/lists/${l0}/cards/"`)
+
+    console.log(`\n=== find ${boardBase} -name "card.json" ===`)
+    await run(ws, `find "${boardBase}" -name "card.json"`)
+
+    console.log(`\n=== grep -l hello ${boardBase} ===`)
+    await run(ws, `grep -r -l hello "${boardBase}"`)
+
+    console.log(`\n=== wc -l ${boardBase}/lists/${l0}/cards/*/card.json ===`)
+    await run(ws, `find "${boardBase}/lists/${l0}/cards" -name "card.json" | head -n 1 | xargs wc -l`)
+  } finally {
+    await ws.close()
+  }
+}
+
+main().catch((err: unknown) => {
+  console.error(err)
+  process.exit(1)
+})

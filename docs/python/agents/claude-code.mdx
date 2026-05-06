@@ -1,0 +1,49 @@
+---
+title: Claude Code
+description: Run Anthropic's Claude Code CLI against any Mirage workspace by mounting it as a real filesystem via FUSE.
+icon: /images/claude-logo.svg
+---
+
+[Claude Code](https://github.com/anthropics/claude-code) is Anthropic's CLI for Claude. It expects a real filesystem and doesn't expose a pluggable backend, so instead of an SDK integration, Mirage exposes any workspace as a real filesystem via [FUSE](/python/setup/fuse) and lets you point `claude` at the mountpoint.
+
+## Install
+
+```bash
+uv add 'mirage-ai[fuse]'
+```
+
+Then install [Claude Code](https://docs.claude.com/en/docs/claude-code/setup) separately.
+
+## Usage
+
+```python
+from mirage import MountMode, Workspace
+from mirage.resource.ram import RAMResource
+from mirage.resource.s3 import S3Config, S3Resource
+
+s3 = S3Resource(S3Config(bucket="my-bucket"))
+
+with Workspace(
+    {"/": (RAMResource(), MountMode.WRITE),
+     "/s3": (s3, MountMode.READ)},
+    fuse=True,
+) as ws:
+    print(f"cd {ws.fuse_mountpoint} && claude")
+    input("Press Enter when done...")
+```
+
+The mountpoint behaves like a regular directory. `claude` reads, writes, runs `bash`, and patches files just like it would on a normal disk, every operation goes through Mirage's ops layer, so writes to `/s3/...` hit S3, writes to `/` stay in RAM.
+
+## Why FUSE instead of an SDK integration?
+
+Claude Code's tool-use loop is fully internal, there's no `Backend` interface to swap. FUSE gives Mirage a single unforced way in: present a real path, let the agent be the agent.
+
+You lose:
+- Per-tool prompt customization
+- Observation hooks on tool calls
+- Mirage's op-record telemetry on the agent's specific calls (host syscalls aren't recorded the same way)
+
+You gain:
+- Zero integration effort
+- Compatibility with every Claude Code feature, including future ones
+- The same approach works for any other directory-based agent ([OpenAI Codex](/python/agents/codex), `aider`, etc.)

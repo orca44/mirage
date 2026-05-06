@@ -1,0 +1,152 @@
+---
+title: Supabase Storage
+icon: database
+description: Set up Supabase Storage as a MIRAGE resource from Node or the browser.
+---
+
+Supabase Storage exposes an S3-compatible API at `https://<project-ref>.storage.supabase.co/storage/v1/s3`, signed with AWS Signature V4 using Supabase **S3 Access Keys** (not your project anon / service-role JWT). MIRAGE derives the endpoint from your `project_ref` automatically and forces path-style URLs.
+
+## Credentials
+
+### 1. Create an S3 access key
+
+1. Open the Supabase dashboard → your project → **Storage → Settings → S3 Access Keys**
+2. Click **New access key**, scope to the bucket(s) you want MIRAGE to see
+3. Copy the **Access key ID** and **Secret access key**, the secret is shown once
+
+### 2. Environment variables
+
+```bash
+# .env.development
+SUPABASE_BUCKET=my-bucket
+SUPABASE_REGION=us-east-1
+SUPABASE_PROJECT_REF=abcdefghijklmnop
+SUPABASE_ACCESS_KEY_ID=...
+SUPABASE_SECRET_ACCESS_KEY=...
+```
+
+<Tip>
+`SUPABASE_REGION` is metadata only, Supabase Storage accepts any region string but requires one for SigV4 signing. Use the region you selected when creating the project.
+</Tip>
+
+## Node (server-side)
+
+```bash
+pnpm add @struktoai/mirage-node
+```
+
+```ts
+import { MountMode, SupabaseResource, Workspace } from '@struktoai/mirage-node'
+
+const sb = new SupabaseResource({
+  bucket: process.env.SUPABASE_BUCKET!,
+  region: process.env.SUPABASE_REGION!,
+  projectRef: process.env.SUPABASE_PROJECT_REF!,
+  accessKeyId: process.env.SUPABASE_ACCESS_KEY_ID!,
+  secretAccessKey: process.env.SUPABASE_SECRET_ACCESS_KEY!,
+})
+
+const ws = new Workspace({ '/bucket/': sb }, { mode: MountMode.READ })
+const res = await ws.execute('ls /bucket/')
+console.log(res.stdoutText)
+```
+
+## Browser (presigned URLs)
+
+```bash
+pnpm add @struktoai/mirage-browser
+```
+
+Same pattern as every other S3-compat backend: the browser calls a `presignedUrlProvider` callback that hits your server, which signs each S3 operation against the Supabase endpoint and returns the URL. The browser `fetch()`es directly.
+
+### 1. Server: sign URLs with the Supabase endpoint
+
+```ts
+import {
+  CopyObjectCommand,
+  DeleteObjectCommand,
+  GetObjectCommand,
+  HeadObjectCommand,
+  ListObjectsV2Command,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3'
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
+
+const PROJECT_REF = process.env.SUPABASE_PROJECT_REF!
+const REGION = process.env.SUPABASE_REGION!
+
+const client = new S3Client({
+  region: REGION,
+  endpoint: `https://${PROJECT_REF}.storage.supabase.co/storage/v1/s3`,
+  forcePathStyle: true,
+  credentials: {
+    accessKeyId: process.env.SUPABASE_ACCESS_KEY_ID!,
+    secretAccessKey: process.env.SUPABASE_SECRET_ACCESS_KEY!,
+  },
+})
+const BUCKET = process.env.SUPABASE_BUCKET!
+
+app.post('/presign/supabase', async (req, res) => {
+  const { path, op, opts } = req.body
+  const key = path.replace(/^\/+/, '')
+  const ttl = typeof opts?.ttlSec === 'number' ? opts.ttlSec : 300
+  let cmd
+  switch (op) {
+    case 'GET':    cmd = new GetObjectCommand({ Bucket: BUCKET, Key: key }); break
+    case 'PUT':    cmd = new PutObjectCommand({ Bucket: BUCKET, Key: key, ContentType: opts?.contentType }); break
+    case 'HEAD':   cmd = new HeadObjectCommand({ Bucket: BUCKET, Key: key }); break
+    case 'DELETE': cmd = new DeleteObjectCommand({ Bucket: BUCKET, Key: key }); break
+    case 'LIST':   cmd = new ListObjectsV2Command({
+      Bucket: BUCKET,
+      Prefix: opts?.listPrefix,
+      Delimiter: opts?.listDelimiter,
+      ContinuationToken: opts?.listContinuationToken,
+    }); break
+    case 'COPY':   cmd = new CopyObjectCommand({
+      Bucket: BUCKET,
+      Key: key,
+      CopySource: `${BUCKET}/${opts?.copySource}`,
+    }); break
+  }
+  res.json({ url: await getSignedUrl(client, cmd, { expiresIn: ttl }) })
+})
+```
+
+<Warning>
+Supabase requires **path-style** URLs (`forcePathStyle: true`). Virtual-hosted style is not supported.
+</Warning>
+
+### 2. Browser: wire it up
+
+```ts
+import { MountMode, SupabaseResource, Workspace } from '@struktoai/mirage-browser'
+
+const sb = new SupabaseResource({
+  bucket: 'my-bucket',
+  projectRef: 'abcdefghijklmnop',
+  presignedUrlProvider: async (path, op, opts) => {
+    const r = await fetch('/presign/supabase', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path, op, opts }),
+    })
+    const { url } = await r.json()
+    return url
+  },
+})
+
+const ws = new Workspace({ '/bucket/': sb }, { mode: MountMode.READ })
+```
+
+### 3. Configure CORS on the bucket
+
+Supabase Storage's S3 API respects the bucket's CORS configuration, which is set in the Supabase dashboard:
+
+1. Project → **Storage → Settings → Policies / CORS configuration**
+2. Add `http://localhost:5173` (and any production origins)
+3. Methods: `GET, PUT, HEAD, DELETE, POST`
+4. Headers: `*`
+5. Exposed headers: `ETag, Content-Length, Content-Type, Last-Modified`
+
+See [Python Supabase Setup](/python/setup/supabase) for the equivalent Python wiring.

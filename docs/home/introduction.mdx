@@ -1,0 +1,390 @@
+---
+title: Introduction
+description: Unified Virtual Filesystem for AI Agents.
+icon: /images/mirage-icon-light.svg
+mode: "frame"
+---
+
+<div className="px-4 py-1 mt-0 lg:pb-16 max-w-6xl mx-auto">
+
+<div className="mx-auto w-full max-w-[1200px]">
+  <img noZoom src="/images/mirage-text-logo-light.svg" alt="Mirage" className="block dark:hidden w-full" />
+  <img noZoom src="/images/mirage-text-logo-dark.svg" alt="Mirage" className="hidden dark:block w-full" />
+</div>
+
+</div>
+
+<div className="max-w-6xl mx-auto px-4 lg:px-6 text-black dark:text-white">
+
+<h2 className="text-2xl font-bold mb-6">Mirage in 30 Seconds</h2>
+
+<div className="max-w-none text-[15px] leading-7 mb-4">
+  <p className="my-0">
+    Mount your resources, then run shell commands across them. The same <code>echo</code>, <code>ls</code>, <code>grep</code> work against an in-memory mount, <Icon icon="aws" /> S3, <Icon icon="slack" /> Slack, etc.
+  </p>
+</div>
+
+<Tabs>
+  <Tab title="Python" icon="/images/python-logo.svg">
+    ```python
+    from mirage import Workspace
+    from mirage.resource.ram import RAMResource
+    from mirage.resource.s3 import S3Resource
+    from mirage.resource.slack import SlackResource
+
+    ws = Workspace({
+        "/data": RAMResource(),
+        "/s3": S3Resource(bucket="my-bucket"),
+        "/slack": SlackResource(),
+    })
+
+    # Same shell vocabulary, three different backends.
+    await ws.execute('echo "hello mirage" > /data/hello.txt')
+    await ws.execute("ls /s3/reports/")
+    result = await ws.execute('grep -r "release" /slack/eng')
+    print(await result.stdout_str())
+    ```
+  </Tab>
+  <Tab title="TypeScript" icon="/images/typescript-logo.svg">
+    ```typescript
+    import {
+      RAMResource,
+      S3Resource,
+      SlackResource,
+      Workspace,
+    } from '@struktoai/mirage-node'
+
+    const ws = new Workspace({
+      '/data': new RAMResource(),
+      '/s3': new S3Resource({ bucket: 'my-bucket' }),
+      '/slack': new SlackResource(),
+    })
+
+    // Same shell vocabulary, three different backends.
+    await ws.execute('echo "hello mirage" > /data/hello.txt')
+    await ws.execute('ls /s3/reports/')
+    const res = await ws.execute('grep -r "release" /slack/eng')
+    console.log(new TextDecoder().decode(res.stdout))
+    ```
+  </Tab>
+  <Tab title="CLI" icon="terminal">
+    ```bash
+    cat > workspace.yaml <<'EOF'
+    mode: WRITE
+    mounts:
+      /data:
+        resource: ram
+        mode: WRITE
+      /s3:
+        resource: s3
+        mode: READ
+        config:
+          bucket: ${AWS_S3_BUCKET}
+      /slack:
+        resource: slack
+        mode: READ
+    EOF
+
+    mirage workspace create workspace.yaml --id demo
+    mirage execute -w demo -c 'echo "hello mirage" > /data/hello.txt'
+    mirage execute -w demo -c 'ls /s3/reports/'
+    mirage execute -w demo -c 'grep -r "release" /slack/eng'
+    ```
+  </Tab>
+</Tabs>
+
+<div className="max-w-none text-[15px] leading-7 mt-4 mb-2">
+  <p className="my-0">
+    Add <Icon icon="github" /> GitHub, Postgres, SSH, <Icon icon="book" /> Notion, <Icon icon="google-drive" /> Google Drive, ... and the same shell vocabulary keeps working. That's the whole pitch.
+  </p>
+</div>
+
+<h2 className="text-2xl font-bold mt-16 mb-6">What is Mirage?</h2>
+
+<div className="max-w-none space-y-1 text-[15px] leading-7">
+  <p className="my-0">
+    <img noZoom src="/images/mirage-icon-light.svg" alt="Mirage" className="inline-block h-4 align-middle mr-1 dark:hidden" /><img noZoom src="/images/mirage-icon-dark.svg" alt="Mirage" className="hidden h-4 align-middle mr-1 dark:inline-block" /><b>Mirage</b> is a <b>Unified Virtual Filesystem</b> for AI agents. It mounts your apps, services, and systems (<Icon icon="aws" /> S3, <Icon icon="cloudflare" /> R2, <Icon icon="google" /> GCS, <Icon icon="envelope" /> Gmail, <Icon icon="google-drive" /> Google Drive, <Icon icon="github" /> GitHub, <Icon icon="linear" /> Linear, <Icon icon="book" /> Notion, <Icon icon="slack" /> Slack, <Icon icon="discord" /> Discord, <Icon icon="telegram" /> Telegram, <Icon icon="database" /> MongoDB, Redis, SSH, local disk, and more) behind one filesystem interface. Agents reach every backend with the same handful of Unix-like tools, pipelines compose across services as naturally as on a local disk, and the workspace embeds in any application, sandbox, or coding agent runtime.
+  </p>
+  <div className="space-y-3">
+    <div>
+      <h4 className="text-lg font-bold mt-4 mb-1"><Icon icon="cubes" size={20} /> One Filesystem</h4>
+      <p className="my-0">
+        Every service speaks the same filesystem semantics, so agents reason about one abstraction instead of N SDKs and M MCPs. <Icon icon="aws" /> S3, <Icon icon="cloudflare" /> R2, <Icon icon="google-drive" /> Google Drive, <Icon icon="github" /> GitHub, <Icon icon="linear" /> Linear, <Icon icon="book" /> Notion, <Icon icon="slack" /> Slack, <Icon icon="discord" /> Discord, <Icon icon="database" /> MongoDB, Redis, SSH, and more mount side-by-side under a single root.
+      </p>
+    </div>
+    <div>
+      <h4 className="text-lg font-bold mt-4 mb-1"><Icon icon="terminal" size={20} /> Familiar Bash Tools</h4>
+      <p className="my-0">
+        Agents reuse the same handful of Unix-like tools (<code>ls</code>, <code>find</code>, <code>grep</code>, <code>cat</code>, ...) instead of learning a new API per service. Pipelines compose across services as naturally as on a local disk, the exact corpus modern LLMs are most heavily trained on.
+      </p>
+
+```bash
+# Find every mention of "mirage" across three services
+grep -r "mirage" /slack /gmail /github
+```
+
+    </div>
+    <div>
+      <h4 className="text-lg font-bold mt-4 mb-1"><Icon icon="box-archive" size={20} /> Portable Workspaces</h4>
+      <p className="my-0">
+        Clone, snapshot, and version your environment. Move agent runs between machines without restarting or reconfiguring the system, and replay any past state on demand.
+      </p>
+    </div>
+    <div>
+      <h4 className="text-lg font-bold mt-4 mb-1"><Icon icon="puzzle-piece" size={20} /> Embed in Apps and Agents</h4>
+      <p className="my-0">
+        Python and TypeScript SDKs give your AI agents a virtual filesystem directly inside FastAPI, Express, browser apps, or any async runtime, no separate process required. Works with the major agent frameworks (OpenAI Agents SDK, Vercel AI SDK, LangChain, Pydantic AI, CAMEL, OpenHands) and a lightweight CLI plugs into coding agents like <img noZoom src="/images/claude-logo.svg" alt="" className="inline-block h-4 align-middle mr-1" />Claude Code and <img noZoom src="/images/openai-logo.svg" alt="" className="inline-block h-4 align-middle mr-1 brightness-0 dark:invert" />Codex.
+      </p>
+    </div>
+    <div>
+      <h4 className="text-lg font-bold mt-4 mb-1"><Icon icon="code-branch" size={20} /> Git-style Versioning</h4>
+      <p className="my-0">
+        Snapshot and clone your workspace the way git treats source. Fork from any past state and replay an agent run.
+      </p>
+    </div>
+  </div>
+</div>
+
+<h2 className="text-2xl font-bold mt-16 mb-6">A Real-world Example</h2>
+
+<div className="max-w-none text-[15px] leading-7 mb-4">
+  <p className="my-0">
+    An agent watches your team's <Icon icon="slack" /> Slack <code>#incident</code> channel. A user posts a screenshot of <code>mirage --help</code> with the message <i>"the CLI design is confusing and hard to follow"</i>.
+  </p>
+</div>
+
+<div className="max-w-none text-[15px] leading-7 mt-6 mb-2">
+  <p className="my-0">
+    Built with the <a href="https://github.com/openai/openai-agents-python" target="_blank" rel="noopener noreferrer"><img noZoom src="/images/openai-logo.svg" alt="" className="inline-block h-4 align-middle mr-1 brightness-0 dark:invert" />OpenAI Agents SDK</a>, the agent walks <Icon icon="slack" /> Slack, <Icon icon="github" /> GitHub, and <Icon icon="linear" /> Linear through one bash tool.
+  </p>
+</div>
+
+<h4 className="text-lg font-bold mt-8 mb-2">Code</h4>
+
+<Tabs>
+  <Tab title="Python" icon="/images/python-logo.svg">
+    ```python
+    from agents import Runner
+    from agents.run import RunConfig
+    from agents.sandbox import SandboxAgent, SandboxRunConfig
+
+    from mirage import MountMode, Workspace
+    from mirage.agents.openai_agents import MirageSandboxClient
+    from mirage.resource.github import GitHubResource
+    from mirage.resource.linear import LinearResource
+    from mirage.resource.slack import SlackResource
+
+    slack = SlackResource(...)
+    github = GitHubResource(repo="strukto-ai/mirage")
+    linear = LinearResource(...)
+
+    ws = Workspace({
+        "/slack": (slack, MountMode.READ),
+        "/github": (github, MountMode.READ),
+        "/linear": (linear, MountMode.WRITE),
+    })
+
+    agent = SandboxAgent(
+        name="Design feedback triage",
+        model="gpt-5.5",
+        instructions=ws.file_prompt,
+    )
+    config = RunConfig(sandbox=SandboxRunConfig(client=MirageSandboxClient(ws)))
+
+    task = (
+        "Scan recent messages in the Slack #incident channel. If anyone posts "
+        "feedback about Mirage with a screenshot, read the image, locate the "
+        "relevant CLI code in the Mirage GitHub repo, and file a design issue "
+        "in Linear with the screenshot, the user's feedback, and links to the "
+        "offending source files."
+    )
+    result = await Runner.run(agent, task, run_config=config)
+    print(result.final_output)
+    ```
+
+    <div className="max-w-none text-[15px] leading-7 mt-4 mb-4">
+      <p className="my-0">
+        Full runnable source: <a href="https://github.com/strukto-ai/mirage/blob/main/examples/python/demo/design_feedback.py" target="_blank" rel="noopener noreferrer"><code>examples/python/demo/design_feedback.py</code></a>.
+      </p>
+    </div>
+  </Tab>
+  <Tab title="TypeScript" icon="/images/typescript-logo.svg">
+    ```typescript
+    import {
+      GitHubResource,
+      LinearResource,
+      MountMode,
+      SlackResource,
+      Workspace,
+    } from '@struktoai/mirage-node'
+    import { Agent, run, shellTool } from '@openai/agents'
+    import { MirageShell, buildSystemPrompt } from '@struktoai/mirage-agents/openai'
+
+    const slack = new SlackResource({ token: process.env.SLACK_BOT_TOKEN! })
+    const github = new GitHubResource({
+      token: process.env.GITHUB_TOKEN!,
+      owner: 'strukto-ai',
+      repo: 'mirage',
+    })
+    const linear = new LinearResource({ apiKey: process.env.LINEAR_API_KEY! })
+
+    const ws = new Workspace(
+      { '/slack': slack, '/github': github, '/linear': linear },
+      {
+        mode: MountMode.READ,
+        modeOverrides: { '/linear': MountMode.WRITE },
+      },
+    )
+
+    const agent = new Agent({
+      name: 'Design feedback triage',
+      model: 'gpt-5.5',
+      instructions: buildSystemPrompt({ workspace: ws }),
+      tools: [shellTool({ shell: new MirageShell(ws) })],
+    })
+
+    const task =
+      'Scan recent messages in the Slack #incident channel. If anyone posts ' +
+      'feedback about Mirage with a screenshot, read the image, locate the ' +
+      'relevant CLI code in the Mirage GitHub repo, and file a design issue ' +
+      'in Linear with the screenshot, the user\'s feedback, and links to the ' +
+      'offending source files.'
+
+    const result = await run(agent, task)
+    console.log(result.finalOutput)
+    ```
+
+    <div className="max-w-none text-[15px] leading-7 mt-4 mb-4">
+      <p className="my-0">
+        API preview. Runnable TypeScript example coming soon. See <a href="https://github.com/strukto-ai/mirage/blob/main/examples/typescript/agents/openai/multi_resource_agent.ts" target="_blank" rel="noopener noreferrer"><code>multi_resource_agent.ts</code></a> for the same shell-tool pattern over Slack + S3 today.
+      </p>
+    </div>
+  </Tab>
+</Tabs>
+
+<h4 className="text-lg font-bold mt-10 mb-2">Walk-through</h4>
+
+<div className="max-w-none text-[15px] leading-7 mb-2">
+  <p className="my-0">
+    Inside the workspace shell, the agent runs three steps:
+  </p>
+</div>
+
+```bash
+# 1. Read the latest #incident message + list its attachments
+$ cat /slack/channels/incident__C0B0DB9K11T/2026-04-28/chat.jsonl
+$ ls  /slack/channels/incident__C0B0DB9K11T/2026-04-28/files/
+# image__F0B01A3R171.png  <- the agent reads this via the model's vision input
+
+# 2. Find the CLI source the screenshot is complaining about
+$ rg -n "Mirage daemon CLI|workspace|session|provision" /github/typescript
+$ cat /github/typescript/packages/cli/src/main.ts
+
+# 3. File a design issue in Linear with the feedback + code refs
+$ linear-issue-create --team_id <team-id> \
+    --title "[Design] Rework Mirage CLI top-level command surface" \
+    --description "$(cat <<'EOF'
+... feedback, screenshot summary, and links to the offending files ...
+EOF
+)"
+```
+
+<div className="max-w-none text-[15px] leading-7 mt-6 mb-2">
+  <p className="my-0">
+    The agent files a new issue in <Icon icon="linear" /> Linear with the user's feedback and links to the relevant source files.
+  </p>
+</div>
+
+<h2 className="text-2xl font-bold mt-16 mb-6">Use Cases</h2>
+
+<div className="max-w-none text-[15px] leading-7 mb-4">
+  <p className="my-0">
+    Mirage shows up wherever an agent needs to read, write, or stitch together data that doesn't already live on a local disk.
+  </p>
+</div>
+
+<CardGroup cols={2}>
+  <Card title="Cross-app triage agents" icon="bell">
+    Watch Slack, search GitHub, file Linear issues. One shell, no per-service wiring.
+  </Card>
+  <Card title="SWE agents on remote data" icon="code">
+    Point Claude Code or Codex at S3, Postgres, or SSH hosts as if they were files.
+  </Card>
+  <Card title="RAG with writes" icon="pen-to-square">
+    READ + WRITE mounts on Notion, Drive, and Linear so the agent can edit and comment back.
+  </Card>
+  <Card title="Ops & observability copilots" icon="chart-line">
+    <code>tail</code>, <code>grep</code>, <code>jq</code> over remote logs, metrics, and config without per-source plugins.
+  </Card>
+  <Card title="Sandbox-native workflows" icon="box">
+    Embed inside Daytona, E2B, Modal, or Vercel sandboxes as the data plane.
+  </Card>
+  <Card title="Reproducible agent runs" icon="wand-magic-sparkles">
+    Snapshot, restore, and clone workspaces for branchable, replayable agent runs.
+  </Card>
+</CardGroup>
+
+<h2 className="text-2xl font-bold mt-16 mb-6">FAQ</h2>
+
+<AccordionGroup>
+  <Accordion title="Do I need FUSE?">
+    No. Mirage runs the workspace in-process: <code>ws.execute(...)</code> parses and dispatches commands without mounting anything on the host. FUSE is an optional surface if you also want host tools (editors, language servers, <code>rg</code>) to see the workspace. See <a href="/home/design/fuse">FUSE</a> for the optional integration.
+  </Accordion>
+  <Accordion title="Where does the shell run? Is it really bash?">
+    The shell runs in your Mirage process. It's a tree-sitter bash parser plus a custom executor that routes commands to per-mount handlers, so there is no subshell to <code>/bin/bash</code> and no <code>os.system</code>. Most common Unix verbs work (<code>ls</code>, <code>cat</code>, <code>grep</code>, <code>find</code>, <code>head</code>, <code>wc</code>, <code>jq</code>, ...) plus pipes, redirects, globs, and <code>&&</code>/<code>||</code>. See <a href="/home/design/limitations">Shell limitations</a> for the gaps.
+  </Accordion>
+  <Accordion title="Is it sandboxed?">
+    The shell only sees your mounted resources: no arbitrary host filesystem, no shelling out to host binaries. For untrusted code you'd still want a real sandbox (Daytona, E2B, Modal); Mirage embeds inside those rather than replacing them.
+  </Accordion>
+  <Accordion title="What about latency and cost?">
+    Backend-bound. <code>cat /s3/...</code> is one GetObject; <code>find /postgres/...</code> is a SQL query. Reads cache per session, and <code>mirage provision</code> returns a dry-run estimate (network bytes, cache hits, projected cost) before you commit to an expensive operation.
+  </Accordion>
+  <Accordion title="Hosted or self-hosted?">
+    Self-hosted. Mirage is a library plus a thin local daemon. The daemon lives in your process or sandbox; data only leaves your network if a mount you configured already does (e.g. an S3 read).
+  </Accordion>
+  <Accordion title="Which agent frameworks are supported?">
+    Anything that exposes a shell tool: Claude Code, Codex / OpenAI Agents SDK, Cursor, OpenHands, Pydantic deepagents. Direct SDK integrations live under <a href="/python/agents">Python agents</a> and <a href="/typescript/agents">TypeScript agents</a>.
+  </Accordion>
+  <Accordion title="Python or TypeScript?">
+    Both. The Python package is the reference implementation; the TypeScript SDK (<code>@struktoai/mirage-node</code>) ships the same <code>Workspace</code>/<code>execute</code> surface and most resources. Some agent integrations land on Python first.
+  </Accordion>
+  <Accordion title="What if a resource I want isn't supported yet?">
+    Resources are pluggable. The <a href="/python/resource/new">"Add a resource"</a> guide walks through the read/write/stat surface a new backend implements. PRs welcome.
+  </Accordion>
+</AccordionGroup>
+
+<h2 className="text-2xl font-bold mt-16 mb-6">Explore Mirage</h2>
+
+<CardGroup cols={2}>
+  <Card title="Python Quickstart" icon="python" href="/python/quickstart">
+    Create a workspace, mount resources, and run shell commands in minutes.
+  </Card>
+  <Card title="TypeScript Quickstart" icon="js" href="/typescript/quickstart">
+    Same Workspace API in Node, browser, and edge runtimes.
+  </Card>
+  <Card title="CLI" icon="terminal" href="/home/cli">
+    Drive workspaces from the shell: create, execute, snapshot, and restore.
+  </Card>
+  <Card title="Resource Matrix" icon="grid-2" href="/home/resource-matrix">
+    Compare resources by mount mode, setup path, and common use cases.
+  </Card>
+</CardGroup>
+
+<h2 className="text-2xl font-bold mt-16 mb-6">Community & Support</h2>
+
+<CardGroup cols={2}>
+  <Card title="Need Help?" icon="circle-question" href="/home/troubleshooting">
+    Setup failures, credential issues, and FUSE gotchas.
+  </Card>
+  <Card title="Book a Call" icon="calendar" href="https://cal.com/strukto/30min">
+    Talk to the team directly if you are blocked.
+  </Card>
+  <Card title="Join our Discord" icon="discord" href="https://discord.gg/u8BPQ65KsS">
+    Chat with the community and get help from the team.
+  </Card>
+  <Card title="GitHub Issues" icon="github" href="https://github.com/strukto-ai/mirage/issues">
+    Report bugs, request features, or ask questions.
+  </Card>
+</CardGroup>
+
+</div>

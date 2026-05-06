@@ -1,0 +1,63 @@
+---
+title: GitHub
+icon: github
+description: Mount a GitHub repository as a Mirage filesystem from Node or the browser.
+---
+
+`GitHubResource` exposes a single repository at a ref as a read-only filesystem. Reads stream blobs through the GitHub API.
+
+Setup steps for the personal access token live at [GitHub Credentials](/home/setup/github).
+
+## Node
+
+```bash
+pnpm add @struktoai/mirage-node
+```
+
+```ts
+import { GitHubResource, MountMode, Workspace } from '@struktoai/mirage-node'
+
+const gh = new GitHubResource({
+  token: process.env.GITHUB_TOKEN!,
+  owner: 'strukto-ai',
+  repo: 'mirage',
+  ref: 'main',
+})
+
+const ws = new Workspace({ '/repo': gh }, { mode: MountMode.READ })
+await ws.execute('cat /repo/README.md')
+```
+
+## Browser
+
+```bash
+pnpm add @struktoai/mirage-browser
+```
+
+```ts
+import { GitHubResource, MountMode, Workspace } from '@struktoai/mirage-browser'
+
+const gh = new GitHubResource({
+  token: GITHUB_TOKEN,
+  owner: 'strukto-ai',
+  repo: 'mirage',
+})
+```
+
+The token reaches the browser, so use a fine-grained PAT scoped to read-only access on a single repo.
+
+## Config
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `token` | required | Personal access token. Redacted in snapshots. |
+| `owner` | required | Repo owner (user or org). |
+| `repo` | required | Repo name. |
+| `ref` | `HEAD` | Branch, tag, or commit SHA. |
+| `baseUrl` | `https://api.github.com` | Override for GitHub Enterprise. |
+
+## Mount mode
+
+`read`. Writes are not yet exposed.
+
+For the mounted layout (refs, paths, blob caching) see the [Python GitHub docs](/python/resource/github).

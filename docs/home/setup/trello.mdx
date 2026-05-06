@@ -1,0 +1,33 @@
+---
+title: Trello
+icon: table-columns
+description: Set up Trello API credentials for the Trello resource.
+---
+
+## Credentials
+
+### 1. Get an API Key
+
+1. Go to [https://trello.com/power-ups/admin](https://trello.com/power-ups/admin)
+1. Create a new Power-Up (or use an existing one)
+1. Copy the **API Key** from the Power-Up's API Key page
+
+### 2. Generate a Token
+
+Open the following URL in your browser, replacing `YOUR_API_KEY`:
+
+```
+https://trello.com/1/authorize?expiration=never&scope=read,write&response_type=token&key=YOUR_API_KEY
+```
+
+Click **Allow** and copy the token string.
+
+### 3. Set Environment Variables
+
+```bash
+# .env.development
+TRELLO_API_KEY=your-api-key
+TRELLO_API_TOKEN=your-api-token
+```
+
+For Python configuration, see the [Python Trello Setup](/python/setup/trello) guide.

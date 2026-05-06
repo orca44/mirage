@@ -1,0 +1,154 @@
+---
+title: S3
+icon: aws
+description: Set up AWS S3 as a MIRAGE resource from Node or the browser.
+---
+
+MIRAGE ships `S3Resource` in **two runtimes**:
+
+- `@struktoai/mirage-node`, signs requests server-side using [@aws-sdk/client-s3](https://www.npmjs.com/package/@aws-sdk/client-s3).
+- `@struktoai/mirage-browser`, stays secret-free: your backend hands out **presigned URLs** and the browser fetches them with `fetch()`.
+
+Credentials (IAM user, access keys) are created the same way in both runtimes, see [AWS S3 Credentials](/home/setup/s3).
+
+## Node (server-side)
+
+```bash
+pnpm add @struktoai/mirage-node
+```
+
+```ts
+import { MountMode, Workspace } from '@struktoai/mirage-node'
+import { S3Resource } from '@struktoai/mirage-node'
+
+const s3 = new S3Resource({
+  bucket: process.env.AWS_S3_BUCKET!,
+  region: process.env.AWS_DEFAULT_REGION ?? 'us-east-1',
+  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+})
+
+const ws = new Workspace({ '/bucket/': s3 }, { mode: MountMode.READ })
+const res = await ws.execute('ls /bucket/')
+console.log(res.stdoutText)
+```
+
+If `~/.aws/credentials` is configured, you can omit `accessKeyId`/`secretAccessKey` and the AWS SDK picks up the default profile.
+
+## Browser (presigned URLs)
+
+```bash
+pnpm add @struktoai/mirage-browser
+```
+
+The browser `S3Resource` never sees AWS credentials. You implement one function, `presignedUrlProvider`, that your frontend calls to get a signed URL for each S3 operation. The actual signing happens on **your server**, using any S3-signing SDK you prefer.
+
+### 1. Server: sign URLs on demand
+
+Using [@aws-sdk/s3-request-presigner](https://www.npmjs.com/package/@aws-sdk/s3-request-presigner):
+
+```ts
+import {
+  CopyObjectCommand,
+  DeleteObjectCommand,
+  GetObjectCommand,
+  HeadObjectCommand,
+  ListObjectsV2Command,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3'
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
+
+const client = new S3Client({ region: process.env.AWS_DEFAULT_REGION })
+const BUCKET = process.env.AWS_S3_BUCKET!
+
+app.post('/presign', async (req, res) => {
+  const { path, op, opts } = req.body as {
+    path: string
+    op: 'GET' | 'PUT' | 'HEAD' | 'DELETE' | 'LIST' | 'COPY'
+    opts?: Record<string, unknown>
+  }
+  const key = path.replace(/^\/+/, '')
+  const ttl = typeof opts?.ttlSec === 'number' ? opts.ttlSec : 300
+  let cmd
+  switch (op) {
+    case 'GET':    cmd = new GetObjectCommand({ Bucket: BUCKET, Key: key }); break
+    case 'PUT':    cmd = new PutObjectCommand({ Bucket: BUCKET, Key: key, ContentType: opts?.contentType as string | undefined }); break
+    case 'HEAD':   cmd = new HeadObjectCommand({ Bucket: BUCKET, Key: key }); break
+    case 'DELETE': cmd = new DeleteObjectCommand({ Bucket: BUCKET, Key: key }); break
+    case 'LIST':   cmd = new ListObjectsV2Command({
+      Bucket: BUCKET,
+      Prefix: opts?.listPrefix as string | undefined,
+      Delimiter: opts?.listDelimiter as string | undefined,
+      ContinuationToken: opts?.listContinuationToken as string | undefined,
+    }); break
+    case 'COPY':   cmd = new CopyObjectCommand({
+      Bucket: BUCKET,
+      Key: key,
+      CopySource: `${BUCKET}/${opts?.copySource as string}`,
+    }); break
+  }
+  const url = await getSignedUrl(client, cmd, { expiresIn: ttl })
+  res.json({ url })
+})
+```
+
+<Tip>
+Scope the presigner to the **minimal operations your app needs**. Read-only viewers only need `GET`/`HEAD`/`LIST`; a file manager needs the full set.
+</Tip>
+
+### 2. Browser: wire it up
+
+```ts
+import { MountMode, S3Resource, Workspace } from '@struktoai/mirage-browser'
+
+const s3 = new S3Resource({
+  bucket: 'my-bucket',
+  presignedUrlProvider: async (path, op, opts) => {
+    const r = await fetch('/presign', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path, op, opts }),
+    })
+    const { url } = (await r.json()) as { url: string }
+    return url
+  },
+})
+
+const ws = new Workspace({ '/bucket/': s3 }, { mode: MountMode.READ })
+const res = await ws.execute('cat /bucket/hello.txt')
+console.log(res.stdoutText)
+```
+
+### 3. Configure CORS on the bucket
+
+Presigned URLs reach the S3 host directly from the browser. Your bucket must allow cross-origin requests from your app's origin, otherwise every `fetch()` fails with `TypeError: Failed to fetch` (the browser drops the response at the CORS preflight).
+
+```json
+[
+  {
+    "AllowedOrigins": ["http://localhost:5173", "https://app.example.com"],
+    "AllowedMethods": ["GET", "PUT", "HEAD", "DELETE", "POST"],
+    "AllowedHeaders": ["*"],
+    "ExposeHeaders": ["ETag", "Content-Length", "Content-Type", "Last-Modified"],
+    "MaxAgeSeconds": 3000
+  }
+]
+```
+
+```bash
+aws s3api put-bucket-cors --bucket $AWS_S3_BUCKET --cors-configuration file://cors.json
+```
+
+**Or** use the helper in the browser example, it signs the `PutBucketCors` call with your existing env credentials and applies the same policy to all configured buckets in one shot:
+
+```bash
+cd examples/typescript/browser
+npx tsx scripts/configure-cors.ts http://localhost:5173 https://app.example.com
+```
+
+<Warning>
+CORS is origin-exact. `http://localhost:5173` ≠ `http://localhost:5174` ≠ `https://app.example.com`. Include every origin you'll serve the page from.
+</Warning>
+
+See [S3 Setup](/home/setup/s3) for credential setup.

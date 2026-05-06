@@ -1,0 +1,102 @@
+// ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+// ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
+import {
+  IOResult,
+  ResourceName,
+  command,
+  materialize,
+  readStdinAsync,
+  specOf,
+  type ByteSource,
+  type CommandFnResult,
+  type CommandOpts,
+  type PathSpec,
+} from '@struktoai/mirage-core'
+import { stream as diskStream } from '../../../core/disk/stream.ts'
+import type { DiskAccessor } from '../../../accessor/disk.ts'
+
+const ENC = new TextEncoder()
+const DEC = new TextDecoder('utf-8', { fatal: false })
+
+function expandTabs(text: string, tabsize: number): string {
+  const out: string[] = []
+  let col = 0
+  for (const ch of text) {
+    if (ch === '\t') {
+      const spaces = tabsize - (col % tabsize)
+      out.push(' '.repeat(spaces))
+      col += spaces
+    } else if (ch === '\n') {
+      out.push(ch)
+      col = 0
+    } else {
+      out.push(ch)
+      col += 1
+    }
+  }
+  return out.join('')
+}
+
+function expandLeadingTabs(text: string, tabsize: number): string {
+  const lines = text.split('\n')
+  const result: string[] = []
+  for (const line of lines) {
+    let i = 0
+    while (i < line.length && line[i] === '\t') i += 1
+    if (i === 0) {
+      result.push(line)
+    } else {
+      const leading = line.slice(0, i)
+      const rest = line.slice(i)
+      result.push(expandTabs(leading, tabsize) + rest)
+    }
+  }
+  return result.join('\n')
+}
+
+async function expandCommand(
+  accessor: DiskAccessor,
+  paths: PathSpec[],
+  texts: string[],
+  opts: CommandOpts,
+): Promise<CommandFnResult> {
+  const tabsize = typeof opts.flags.t === 'string' ? Number.parseInt(opts.flags.t, 10) : 8
+  const leadingOnly = opts.flags.i === true
+  const expander = (txt: string) =>
+    leadingOnly ? expandLeadingTabs(txt, tabsize) : expandTabs(txt, tabsize)
+  if (paths.length > 0) {
+    const parts: string[] = []
+    for (const p of paths) {
+      const data = DEC.decode(await materialize(diskStream(accessor, p)))
+      parts.push(expander(data))
+    }
+    const result: ByteSource = ENC.encode(parts.join(''))
+    return [result, new IOResult()]
+  }
+  const stdinData = await readStdinAsync(opts.stdin)
+  if (stdinData === null) {
+    return [null, new IOResult({ exitCode: 1, stderr: ENC.encode('expand: missing operand\n') })]
+  }
+  const text = DEC.decode(stdinData)
+  const result: ByteSource = ENC.encode(expander(text))
+  return [result, new IOResult()]
+}
+
+export const DISK_EXPAND = command({
+  name: 'expand',
+  resource: ResourceName.DISK,
+  spec: specOf('expand'),
+  fn: expandCommand,
+})

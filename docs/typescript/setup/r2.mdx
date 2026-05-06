@@ -1,0 +1,142 @@
+---
+title: Cloudflare R2
+icon: cloud
+description: Set up Cloudflare R2 as a MIRAGE resource from Node or the browser.
+---
+
+R2 uses the S3 API with AWS Signature V4 against `https://<account-id>.r2.cloudflarestorage.com`. MIRAGE derives this endpoint from your account ID automatically.
+
+Credentials (R2 API token with object read/write scopes) are created the same way in both runtimes, see [R2 Credentials](/home/setup/r2).
+
+## Node (server-side)
+
+```bash
+pnpm add @struktoai/mirage-node
+```
+
+```ts
+import { MountMode, R2Resource, Workspace } from '@struktoai/mirage-node'
+
+const r2 = new R2Resource({
+  bucket: process.env.R2_BUCKET!,
+  accountId: process.env.R2_ACCOUNT_ID!,
+  accessKeyId: process.env.R2_ACCESS_KEY_ID!,
+  secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
+})
+
+const ws = new Workspace({ '/bucket/': r2 }, { mode: MountMode.READ })
+const res = await ws.execute('ls /bucket/')
+console.log(res.stdoutText)
+```
+
+## Browser (presigned URLs)
+
+```bash
+pnpm add @struktoai/mirage-browser
+```
+
+The browser `R2Resource` is secret-free, your backend signs each operation using your R2 keys and returns a URL. R2 accepts AWS Signature V4, so `@aws-sdk/s3-request-presigner` works with `region: 'auto'` pointed at R2's endpoint.
+
+### 1. Server: sign URLs with the R2 endpoint
+
+```ts
+import {
+  CopyObjectCommand,
+  DeleteObjectCommand,
+  GetObjectCommand,
+  HeadObjectCommand,
+  ListObjectsV2Command,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3'
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
+
+const client = new S3Client({
+  region: 'auto',
+  endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  credentials: {
+    accessKeyId: process.env.R2_ACCESS_KEY_ID!,
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
+  },
+})
+const BUCKET = process.env.R2_BUCKET!
+
+app.post('/presign/r2', async (req, res) => {
+  const { path, op, opts } = req.body
+  const key = path.replace(/^\/+/, '')
+  const ttl = typeof opts?.ttlSec === 'number' ? opts.ttlSec : 300
+  let cmd
+  switch (op) {
+    case 'GET':    cmd = new GetObjectCommand({ Bucket: BUCKET, Key: key }); break
+    case 'PUT':    cmd = new PutObjectCommand({ Bucket: BUCKET, Key: key, ContentType: opts?.contentType }); break
+    case 'HEAD':   cmd = new HeadObjectCommand({ Bucket: BUCKET, Key: key }); break
+    case 'DELETE': cmd = new DeleteObjectCommand({ Bucket: BUCKET, Key: key }); break
+    case 'LIST':   cmd = new ListObjectsV2Command({
+      Bucket: BUCKET,
+      Prefix: opts?.listPrefix,
+      Delimiter: opts?.listDelimiter,
+      ContinuationToken: opts?.listContinuationToken,
+    }); break
+    case 'COPY':   cmd = new CopyObjectCommand({
+      Bucket: BUCKET,
+      Key: key,
+      CopySource: `${BUCKET}/${opts?.copySource}`,
+    }); break
+  }
+  res.json({ url: await getSignedUrl(client, cmd, { expiresIn: ttl }) })
+})
+```
+
+### 2. Browser: wire it up
+
+```ts
+import { MountMode, R2Resource, Workspace } from '@struktoai/mirage-browser'
+
+const r2 = new R2Resource({
+  bucket: 'my-r2-bucket',
+  accountId: 'abc123...',
+  presignedUrlProvider: async (path, op, opts) => {
+    const r = await fetch('/presign/r2', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path, op, opts }),
+    })
+    const { url } = await r.json()
+    return url
+  },
+})
+
+const ws = new Workspace({ '/bucket/': r2 }, { mode: MountMode.READ })
+```
+
+<Tip>
+`accountId` on the browser config is only used for display/logging; the actual endpoint is baked into the presigned URLs your backend returns.
+</Tip>
+
+### 3. Configure CORS on the bucket
+
+R2 does accept S3-flavored `PutBucketCors`, but your token needs **"Admin Read & Write"** permissions on the bucket, object-scoped tokens will get `Access Denied`. Two paths:
+
+**Option A, Cloudflare Dashboard (fastest, no new token):**
+
+1. Open https://dash.cloudflare.com → **R2** → your bucket
+2. **Settings** tab → **CORS Policy** → **Add CORS policy**
+3. Origin: `http://localhost:5173` (and any production origins), methods `GET,PUT,HEAD,DELETE,POST`, allowed headers `*`
+
+**Option B, admin-scoped R2 API token + the helper script:**
+
+1. Cloudflare Dashboard → **R2** → **Manage R2 API Tokens** → **Create API token**
+2. Permissions: **Admin Read & Write** on your bucket
+3. Update `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` in `.env.development`
+4. Run the same helper used for S3:
+
+```bash
+cd examples/typescript/browser
+npx tsx scripts/configure-cors.ts http://localhost:5173 https://app.example.com
+```
+
+<Warning>
+Object-scoped tokens (`Object Read & Write`) cannot edit CORS. If the script returns `Access Denied` on R2, you're almost certainly using an object token.
+</Warning>
+
+See [Python R2 Setup](/python/setup/r2) for the equivalent Python wiring.

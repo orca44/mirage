@@ -1,0 +1,197 @@
+---
+title: Adding a New Resource
+icon: plus
+description: Step-by-step guide for implementing a new MIRAGE resource.
+---
+
+This guide covers what you need to implement when adding a new resource
+to MIRAGE. Use the Telegram, Discord, or Slack resources as reference.
+
+## File Structure
+
+```text
+mirage/
+  resource/<name>/
+    __init__.py          # lazy-loading exports
+    config.py            # Pydantic config (credentials)
+    <name>.py            # BaseResource subclass
+  accessor/<name>.py     # Accessor wrapping config
+  core/<name>/
+    __init__.py
+    _client.py           # HTTP client (get/post with rate limiting)
+    readdir.py           # directory listing
+    read.py              # file reading
+    stat.py              # file metadata
+    scope.py             # scope detection
+    glob.py              # glob pattern resolution
+    ...                  # data fetching modules (history, search, post, etc.)
+  ops/<name>/
+    __init__.py           # exports OPS list
+    read.py               # @op wrapper
+    readdir.py            # @op wrapper
+    stat.py               # @op wrapper
+  commands/builtin/<name>/
+    __init__.py           # exports COMMANDS list
+    _plan.py              # cost estimation helpers
+    cat.py, ls.py, ...    # standard commands
+    <name>_send.py, ...   # resource-specific commands
+```
+
+## Implementation Steps
+
+### 1. Config, Accessor, ResourceName
+
+Create a Pydantic config model to hold credentials and an accessor
+class that wraps it.
+
+```python
+# mirage/resource/<name>/config.py
+from pydantic import BaseModel
+
+
+class MyConfig(BaseModel):
+    token: str
+```
+
+```python
+# mirage/accessor/<name>.py
+from mirage.accessor.base import Accessor
+from mirage.resource.<name>.config import MyConfig
+
+
+class MyAccessor(Accessor):
+
+    def __init__(self, config: MyConfig) -> None:
+        self.config = config
+```
+
+Add `MY_RESOURCE = "<name>"` to the `ResourceName` enum in `mirage/types.py`.
+
+### 2. HTTP Client
+
+Wrap the resource's API with rate-limit handling. All resources follow
+the same pattern: async get/post functions with retry on 429.
+
+```python
+# mirage/core/<name>/_client.py
+async def my_get(config, endpoint, params=None) -> dict: ...
+async def my_post(config, endpoint, body=None) -> dict: ...
+```
+
+### 3. Core VFS
+
+Implement the three VFS operations that map API data to a filesystem:
+
+- **`readdir.py`** -- Returns `list[str]` of child paths for a directory.
+- **`read.py`** -- Returns `bytes` content of a file.
+- **`stat.py`** -- Returns `FileStat` with name, type, and extras (e.g., IDs).
+
+All three accept `(accessor, path, index, prefix)` and use `IndexCacheStore`
+to cache name-to-ID mappings.
+
+### 4. Scope Detection and GlobScope Optimization
+
+`GlobScope` carries the raw path and pattern **before** expansion. This
+lets commands decide how to resolve paths efficiently -- skipping
+expensive glob expansion when the resource has a native API for the
+operation.
+
+**`scope.py`** parses the unexpanded path to determine the level:
+
+```python
+@dataclass
+class MyScope:
+    level: str  # "root", "category", "item", "file"
+    item_id: str | None = None
+```
+
+**How commands use scope for optimization:**
+
+```python
+# Example: grep at different scopes
+
+@command("grep", resource="my_resource", spec=SPECS["grep"])
+async def grep(accessor, paths, *texts, **_extra):
+    pattern = texts[0]
+    scope = detect_scope(paths[0], index)
+
+    if scope.level in ("category", "item"):
+        # CHEAP: use native search API (1 API call)
+        results = await search_api(accessor.config, scope.item_id, pattern)
+        return format_results(results), IOResult()
+
+    # EXPENSIVE fallback: expand glob, download each file, grep locally
+    paths = await resolve_glob(accessor, paths, index=index)
+    for p in paths:
+        data = await read(accessor, p.original, index, prefix=p.prefix)
+        # ... grep the bytes ...
+```
+
+**When to use this pattern:**
+
+| Scenario                                   | Approach                                                  |
+| ------------------------------------------ | --------------------------------------------------------- |
+| Resource has a search API (Discord, Slack) | Use scope to route to native API at directory level       |
+| Resource has no search API (Telegram)      | Always fall through to file-level reads; scope is a noop  |
+| `head`/`tail` with direct message fetch    | Use scope to detect file level, fetch N messages directly |
+
+**When the resource has no search API**, keep `scope.py` as a noop for
+structural consistency. The file still parses path parts but does not
+trigger any API calls:
+
+```python
+# Noop scope -- no search API, no resource-relative paths
+def detect_scope(path: str | GlobScope) -> MyScope:
+    key = path.strip("/")
+    parts = key.split("/")
+    # Just parse path structure, no index lookups
+    ...
+```
+
+### 5. Glob Resolution
+
+```python
+# mirage/core/<name>/glob.py
+async def resolve_glob(accessor, paths, index=None) -> list[GlobScope]:
+    # Expand patterns via readdir + fnmatch
+```
+
+### 6. Ops Layer
+
+Thin wrappers that bridge core functions to the command framework:
+
+```python
+@op("read", resource="<name>")
+async def read(accessor, scope, **kwargs) -> bytes:
+    return await core_read(accessor, scope.original,
+                           kwargs.get("index"), prefix=scope.prefix)
+```
+
+### 7. Commands
+
+Copy from an existing resource (Discord/Slack), then:
+
+1. Replace accessor and core imports.
+1. Set `resource="<name>"` in decorators.
+1. Add or remove scope-based optimizations depending on API capabilities.
+1. Add resource-specific commands (send message, etc.).
+
+### 8. Resource Class
+
+```python
+class MyResource(BaseResource):
+    name: str = ResourceName.MY_RESOURCE
+    is_remote: bool = True
+
+    def __init__(self, config: MyConfig) -> None:
+        super().__init__()
+        self.config = config
+        self.accessor = MyAccessor(self.config)
+        from mirage.commands.builtin.<name> import COMMANDS
+        from mirage.ops.<name> import OPS
+
+        for fn in COMMANDS:
+            self.register(fn)
+        for fn in OPS:
+            self.register_op(fn)
+```

@@ -1,0 +1,70 @@
+---
+title: pydantic-deepagents
+description: Implements pydantic-ai-backend's SandboxProtocol so pydantic-deepagents and any pydantic-ai agent can run inside a Mirage workspace.
+icon: /images/pydantic-logo.svg
+---
+
+[pydantic-deepagents](https://github.com/vstorm-co/pydantic-deepagents) is a Claude Code–style deep agent harness built on [pydantic-ai](https://github.com/pydantic/pydantic-ai). It uses [`pydantic-ai-backend`](https://pypi.org/project/pydantic-ai-backend/)'s `SandboxProtocol` for filesystem, shell, grep, and edit operations, Mirage's `PydanticAIWorkspace` is a drop-in implementation of that protocol.
+
+## Install
+
+```bash
+uv add 'mirage-ai[pydantic-ai]'
+```
+
+This pulls in `pydantic-ai>=1.35` and `pydantic-ai-backend>=0.1.0`. To use it with [pydantic-deepagents](https://github.com/vstorm-co/pydantic-deepagents):
+
+```bash
+uv add pydantic-deep
+```
+
+## Usage
+
+```python
+from dataclasses import dataclass
+
+from pydantic_ai import Agent
+from pydantic_ai_backends import create_console_toolset
+
+from mirage import MountMode, Workspace
+from mirage.agents.pydantic_ai import PydanticAIWorkspace, build_system_prompt
+from mirage.resource.ram import RAMResource
+
+ws = Workspace({"/": RAMResource()}, mode=MountMode.WRITE)
+backend = PydanticAIWorkspace(ws)
+
+
+@dataclass
+class Deps:
+    backend: PydanticAIWorkspace
+
+
+agent = Agent(
+    "openai:gpt-4.1",
+    system_prompt=build_system_prompt(
+        mount_info={"/": "In-memory filesystem (read/write)"},
+    ),
+    deps_type=Deps,
+    toolsets=[create_console_toolset()],
+)
+
+result = agent.run_sync(
+    "Create /hello.txt with 'hi' and cat it.",
+    deps=Deps(backend=backend),
+)
+print(result.output)
+```
+
+## Exports
+
+| Symbol | Purpose |
+| --- | --- |
+| `PydanticAIWorkspace` | `SandboxProtocol` implementation backed by a Mirage workspace. |
+| `build_system_prompt` | Generates a system prompt that describes mounted paths to the model. |
+
+`PydanticAIWorkspace` routes file operations through the Ops layer directly and shell operations through `Workspace.execute()` for full pipe and flag support. PDF reads are converted to images via `pages_to_images` so the agent can pass them as `BinaryContent`.
+
+## Examples
+
+- [`examples/python/agents/pydantic_ai/s3_agent.py`](https://github.com/strukto-ai/mirage/blob/main/examples/python/agents/pydantic_ai/s3_agent.py), read-only S3 exploration.
+- [`examples/python/agents/pydantic_ai/s3_pdf_agent.py`](https://github.com/strukto-ai/mirage/blob/main/examples/python/agents/pydantic_ai/s3_pdf_agent.py), PDF page-to-image pipeline.

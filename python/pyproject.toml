@@ -1,0 +1,195 @@
+[project]
+name = "mirage-ai"
+version = "0.0.1a1"
+description = "Eyes and hands are all your agents need. By mounting S3, Google Drive, Slack, Discord, Gmail, Redis, and more as a virtual filesystem, Mirage gives AI agents a unified shell-like interface to read, write, and pipe through. It seems real, but it isn't; it's a mirage. Until you make it real."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["../LICENSE"]
+requires-python = ">=3.12"
+authors = [
+    { name = "Zecheng Zhang", email = "zecheng@alumni.stanford.edu" },
+]
+keywords = [
+    "ai-agents",
+    "filesystem",
+    "vfs",
+    "fuse",
+    "s3",
+    "google-drive",
+    "slack",
+    "agent-tools",
+    "shell",
+    "rag",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS :: MacOS X",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: Filesystems",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    "aiofiles>=24.1.0",
+    "aiohttp>=3.13.3",
+    "fastapi>=0.135.1",
+    "httpx>=0.28.1",
+    "numpy>=2.4.3",
+    "orjson>=3.11",
+    "pyyaml>=6.0.3",
+    "python-dotenv>=1.2.2",
+    "tree-sitter>=0.25.2",
+    "tree-sitter-bash>=0.25.1",
+    "typer>=0.12.0",
+    "uvicorn[standard]>=0.41.0",
+    "pypdfium2>=5.7.0",
+    "pillow>=12.2.0",
+    "jq>=1.11.0",
+]
+
+[project.urls]
+Homepage = "https://www.strukto.ai/"
+Repository = "https://github.com/strukto-ai/mirage"
+Documentation = "https://github.com/strukto-ai/mirage/tree/main/docs"
+Issues = "https://github.com/strukto-ai/mirage/issues"
+
+[project.scripts]
+mirage = "mirage.cli.main:app"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["mirage*"]
+
+[project.optional-dependencies]
+# --- storage / object stores ---
+s3       = ["aioboto3>=13.0"]
+r2       = ["aioboto3>=13.0"]
+gcs      = ["aioboto3>=13.0"]
+oci      = ["aioboto3>=13.0"]
+
+# --- network / remote ---
+ssh      = ["asyncssh>=2.22.0", "paramiko>=4.0.0"]
+
+# --- mount ---
+fuse     = ["mfusepy>=1.0.0"]
+
+# --- mongodb ---
+mongodb  = ["motor>=3.7.1"]
+
+# --- postgres ---
+postgres = ["asyncpg>=0.30.0"]
+
+# --- redis ---
+redis    = ["redis[hiredis]>=5.0"]
+
+# --- mail ---
+email    = ["aioimaplib>=2.0.1", "aiosmtplib>=5.1.0"]
+
+# --- data ---
+parquet  = ["pandas>=3.0.1", "pyarrow>=15.0"]
+hdf5     = ["h5py>=3.16.0", "tables>=3.11.1"]
+pdf      = ["pypdfium2>=5.6.0", "pillow>=12.2.0"]
+
+# --- audio ---
+audio    = ["av>=17.0.0", "sherpa-onnx>=1.12.34", "tinytag>=2.2.1"]
+
+# --- observability ---
+langfuse = ["langfuse>=4.2.0"]
+
+# --- anthropic ---
+anthropic   = ["anthropic>=0.88"]
+
+# --- openai ---
+openai      = ["openai>=2.30.0", "openai-agents>=0.14.7"]
+
+# --- pydantic-ai ---
+pydantic-ai = [
+    "pydantic-ai>=1.35",
+    "pydantic-ai-backend>=0.1.0",
+    "mirage-ai[pdf]",
+]
+
+# --- deepagents ---
+deepagents  = ["deepagents>=0.4.12", "mirage-ai[pdf]"]
+
+# --- openhands ---
+openhands   = ["openhands-sdk>=1.18.0", "openhands-tools>=1.18.0"]
+
+# --- camel ---
+camel       = ["camel-ai>=0.2.40,<0.3", "markitdown>=0.1.5"]
+
+# --- meta: install everything ---
+all = [
+    "mirage-ai[s3]",
+    "mirage-ai[r2]",
+    "mirage-ai[gcs]",
+    "mirage-ai[oci]",
+    "mirage-ai[ssh]",
+    "mirage-ai[fuse]",
+    "mirage-ai[mongodb]",
+    "mirage-ai[postgres]",
+    "mirage-ai[redis]",
+    "mirage-ai[email]",
+    "mirage-ai[parquet]",
+    "mirage-ai[hdf5]",
+    "mirage-ai[pdf]",
+    "mirage-ai[audio]",
+    "mirage-ai[langfuse]",
+    "mirage-ai[anthropic]",
+    "mirage-ai[openai]",
+    "mirage-ai[pydantic-ai]",
+    "mirage-ai[deepagents]",
+    "mirage-ai[openhands]",
+]
+
+[tool.uv]
+conflicts = [
+    [
+        { extra = "camel" },
+        { extra = "openai" },
+    ],
+    [
+        { extra = "camel" },
+        { extra = "openhands" },
+    ],
+    [
+        { extra = "camel" },
+        { extra = "pydantic-ai" },
+    ],
+    [
+        { extra = "camel" },
+        { extra = "all" },
+    ],
+]
+
+[dependency-groups]
+dev = [
+    "grpcio>=1.78.0",
+    "grpcio-tools>=1.78.0",
+    "moto[s3]>=5.1.22",
+    "pre-commit",
+    "pytest",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=7.0.0",
+    "pytest-httpx>=0.36.0",
+]
+
+[tool.flake8]
+exclude = ["mirage/commands/remote/grpc/proto/command_pb2.py", "mirage/commands/remote/grpc/proto/command_pb2_grpc.py"]
+per-file-ignores = [
+    "python/mirage/resource/*/prompt.py:E501",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--cov=mirage --cov-report=term-missing -q --import-mode=importlib"
+markers = [
+    "network: tests that require network access",
+]

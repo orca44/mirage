@@ -1,0 +1,62 @@
+---
+title: Postgres
+icon: database
+description: Mount a Postgres database as a read-only filesystem of schemas, tables, and rows.
+---
+
+`PostgresResource` connects to Postgres via a DSN and exposes its schemas and tables as a tree.
+
+Setup steps for the DSN and required permissions live at [Postgres Credentials](/home/setup/postgres).
+
+## Node
+
+```bash
+pnpm add @struktoai/mirage-node pg
+```
+
+```ts
+import { MountMode, PostgresResource, Workspace } from '@struktoai/mirage-node'
+
+const pg = new PostgresResource({
+  dsn: process.env.PG_DSN!,
+  schemas: ['public', 'analytics'],
+})
+
+const ws = new Workspace({ '/pg': pg }, { mode: MountMode.READ })
+await ws.execute('ls /pg/public/')
+```
+
+## Browser
+
+```bash
+pnpm add @struktoai/mirage-browser
+```
+
+For browser apps, point the resource at a same-origin proxy or use a serverless Postgres driver such as `@neondatabase/serverless`. The browser examples include a Vite plugin that wires the resource to a server-side `pg` client:
+
+```ts
+import { MountMode, PostgresResource, Workspace } from '@struktoai/mirage-browser'
+
+const pg = new PostgresResource({
+  dsn: 'postgres-proxy://app',
+})
+```
+
+## Config
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `dsn` | required | Postgres connection string. Redacted in snapshots. |
+| `schemas` | none | Optional list to limit which schemas appear in the tree. |
+| `defaultRowLimit` | `1000` | Default LIMIT applied to ad-hoc reads. |
+| `maxReadRows` | `10_000` | Hard ceiling per read. |
+| `maxReadBytes` | `10 MiB` | Hard ceiling per read. |
+| `defaultSearchLimit` | `100` | Default LIMIT for search-style queries. |
+
+## Mount mode
+
+`read` only. Postgres mounts are read-only at the resource level.
+
+## Snapshot behavior
+
+The DSN is redacted on snapshot. Loading a snapshot back requires an override config that supplies a fresh DSN.

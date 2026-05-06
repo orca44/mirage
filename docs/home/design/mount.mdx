@@ -1,0 +1,82 @@
+---
+title: Mounts
+description: How resources attach to virtual prefixes and how access modes shape what agents can do.
+icon: hard-drive
+---
+
+A mount is how Mirage attaches one resource to one visible prefix. If [Eyes](/home/design/eyes) are how agents see, a mount is the attachment point that puts a new region of the world within reach of the [Arm](/home/design/arm).
+
+## Resource Versus Mount
+
+| Concept | Role |
+| ------- | ---- |
+| Resource | Knows how to read and write one external system |
+| Mount | Binds that resource to a prefix and access mode inside a `Workspace` |
+
+The same resource type can be mounted more than once at different prefixes, with different access policies.
+
+## Prefix Routing
+
+Mirage resolves paths with longest-prefix match.
+
+That means `/data/sub/file.txt` resolves to `/data/sub/` if both `/data/` and `/data/sub/` exist as mounts.
+
+```python
+reg.mount("/data/", p1, MountMode.WRITE)
+reg.mount("/data/sub/", p2, MountMode.WRITE)
+```
+
+This lets Mirage combine broad mounts with narrower overrides.
+
+## What A Mount Carries
+
+Each mount bundles the pieces needed for dispatch at one prefix:
+
+- a normalized prefix such as `/s3/`
+- the resource instance
+- an access mode
+- resource-specific command registrations
+- resource-specific VFS operation registrations
+- optional cross-mount command handlers
+
+In practice, this means Mirage can answer both questions at once:
+
+- Which backend owns this path?
+- Which command or filesystem operation should handle it?
+
+## Mount Modes
+
+Mount modes control what the [Hands](/home/design/hands) are allowed to do at a prefix.
+
+| Mode | Behavior |
+| ---- | -------- |
+| `READ` | Read only. Write commands are blocked. |
+| `WRITE` | Read and write. Standard filesystem operations are enabled. |
+| `EXEC` | Read, write, and execute. |
+
+## Examples
+
+### One Global Default
+
+```python
+ws = Workspace({"/s3": s3}, mode=MountMode.READ)
+```
+
+Every mounted resource inherits `READ` unless a mount overrides it.
+
+### Per-Mount Control
+
+```python
+ws = Workspace({
+    "/s3": (s3, MountMode.READ),
+    "/scratch": (RAMResource(), MountMode.WRITE),
+})
+```
+
+This is the common pattern: remote data stays read only, scratch space stays writable.
+
+## Related
+
+- [Workspace](/home/design/workspace) owns the mount registry.
+- [Sessions](/home/design/session) decide where commands run from.
+- [Eyes](/home/design/eyes) explain why mounted prefixes are the right representation layer.

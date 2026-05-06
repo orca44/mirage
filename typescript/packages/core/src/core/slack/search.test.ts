@@ -1,0 +1,202 @@
+// ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+// ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
+import { describe, expect, it } from 'vitest'
+import { SlackAccessor } from '../../accessor/slack.ts'
+import { NodeSlackTransport, type SlackResponse, type SlackTransport } from './_client.ts'
+import type { SlackScope } from './scope.ts'
+import { buildQuery, formatGrepResults, searchMessages } from './search.ts'
+
+const ENC = new TextEncoder()
+const DEC = new TextDecoder()
+
+class FakeTransport implements SlackTransport {
+  public readonly calls: { endpoint: string; params?: Record<string, string> }[] = []
+  constructor(private readonly responder: () => SlackResponse = () => ({ ok: true })) {}
+  call(endpoint: string, params?: Record<string, string>): Promise<SlackResponse> {
+    this.calls.push({ endpoint, ...(params !== undefined ? { params } : {}) })
+    return Promise.resolve(this.responder())
+  }
+}
+
+describe('searchMessages', () => {
+  it('calls search.messages with query, count, sort=timestamp', async () => {
+    const t = new FakeTransport(() => ({ ok: true, messages: { matches: [] } }))
+    const out = await searchMessages(new SlackAccessor(t), 'hello', 5)
+    expect(t.calls[0]?.endpoint).toBe('search.messages')
+    expect(t.calls[0]?.params).toEqual({ query: 'hello', count: '5', sort: 'timestamp' })
+    const parsed = JSON.parse(DEC.decode(out)) as { ok: boolean }
+    expect(parsed.ok).toBe(true)
+  })
+
+  it('defaults count to 20', async () => {
+    const t = new FakeTransport(() => ({ ok: true }))
+    await searchMessages(new SlackAccessor(t), 'q')
+    expect(t.calls[0]?.params).toMatchObject({ count: '20' })
+  })
+
+  it('returns bytes encoding the JSON response', async () => {
+    const t = new FakeTransport(() => ({ ok: true, messages: { matches: [{ ts: '1.0' }] } }))
+    const out = await searchMessages(new SlackAccessor(t), 'q')
+    const decoded = JSON.parse(DEC.decode(out)) as {
+      messages: { matches: { ts: string }[] }
+    }
+    expect(decoded.messages.matches[0]?.ts).toBe('1.0')
+  })
+
+  it('uses search token override when transport is NodeSlackTransport with searchToken', async () => {
+    const observedAuths: string[] = []
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = ((_url: URL | RequestInfo, init?: RequestInit): Promise<Response> => {
+      const headers = (init?.headers ?? {}) as Record<string, string>
+      observedAuths.push(headers.Authorization ?? '')
+      return Promise.resolve(
+        new Response(JSON.stringify({ ok: true, messages: { matches: [] } }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+    }) as typeof fetch
+    try {
+      const transport = new NodeSlackTransport('main-token', 'search-token')
+      await searchMessages(new SlackAccessor(transport), 'q')
+      expect(observedAuths[0]).toBe('Bearer search-token')
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  it('falls back to the accessor transport when no search token', async () => {
+    const observedAuths: string[] = []
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = ((_url: URL | RequestInfo, init?: RequestInit): Promise<Response> => {
+      const headers = (init?.headers ?? {}) as Record<string, string>
+      observedAuths.push(headers.Authorization ?? '')
+      return Promise.resolve(
+        new Response(JSON.stringify({ ok: true, messages: { matches: [] } }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+    }) as typeof fetch
+    try {
+      const transport = new NodeSlackTransport('main-token')
+      await searchMessages(new SlackAccessor(transport), 'q')
+      expect(observedAuths[0]).toBe('Bearer main-token')
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+})
+
+describe('buildQuery', () => {
+  it('returns pattern unchanged when no container', () => {
+    const scope: SlackScope = { useNative: true, resourcePath: '/' }
+    expect(buildQuery('hi', scope)).toBe('hi')
+  })
+
+  it('prefixes channels with in:#name', () => {
+    const scope: SlackScope = {
+      useNative: true,
+      container: 'channels',
+      channelName: 'general',
+      resourcePath: 'channels/general__C1',
+    }
+    expect(buildQuery('hi', scope)).toBe('in:#general hi')
+  })
+
+  it('prefixes dms with in:@name', () => {
+    const scope: SlackScope = {
+      useNative: true,
+      container: 'dms',
+      channelName: 'alice',
+      resourcePath: 'dms/alice__D1',
+    }
+    expect(buildQuery('hi', scope)).toBe('in:@alice hi')
+  })
+})
+
+describe('formatGrepResults', () => {
+  it('formats matches with channel/date prefix', () => {
+    const raw = ENC.encode(
+      JSON.stringify({
+        messages: {
+          matches: [
+            {
+              channel: { name: 'general', id: 'C1' },
+              ts: '1700000000.000100',
+              user: 'U1',
+              text: 'hello world',
+            },
+          ],
+        },
+      }),
+    )
+    const scope: SlackScope = {
+      useNative: true,
+      container: 'channels',
+      channelName: 'general',
+      channelId: 'C1',
+      resourcePath: 'channels/general__C1',
+    }
+    const lines = formatGrepResults(raw, scope, '/mnt/slack')
+    expect(lines).toHaveLength(1)
+    expect(lines[0]).toMatch(
+      /^\/mnt\/slack\/channels\/general__C1\/\d{4}-\d{2}-\d{2}\.jsonl:\[U1\] hello world$/,
+    )
+  })
+
+  it('falls back to scope channel info when not present in match', () => {
+    const raw = ENC.encode(
+      JSON.stringify({
+        messages: { matches: [{ ts: '1700000000.0', text: 'hi', username: 'alice' }] },
+      }),
+    )
+    const scope: SlackScope = {
+      useNative: true,
+      container: 'channels',
+      channelName: 'general',
+      channelId: 'C1',
+      resourcePath: 'channels/general__C1',
+    }
+    const lines = formatGrepResults(raw, scope, '/mnt/slack')
+    expect(lines[0]).toContain('/channels/general__C1/')
+    expect(lines[0]).toContain('[alice] hi')
+  })
+
+  it('returns empty when no matches', () => {
+    const raw = ENC.encode(JSON.stringify({ messages: { matches: [] } }))
+    const scope: SlackScope = { useNative: true, resourcePath: '/' }
+    expect(formatGrepResults(raw, scope, '/mnt/slack')).toEqual([])
+  })
+
+  it('replaces newlines in text with spaces', () => {
+    const raw = ENC.encode(
+      JSON.stringify({
+        messages: {
+          matches: [{ ts: '1.0', user: 'U1', text: 'a\nb\nc' }],
+        },
+      }),
+    )
+    const scope: SlackScope = {
+      useNative: true,
+      container: 'channels',
+      channelName: 'general',
+      channelId: 'C1',
+      resourcePath: 'channels/general__C1',
+    }
+    const lines = formatGrepResults(raw, scope, '/mnt/slack')
+    expect(lines[0]).toContain('[U1] a b c')
+  })
+})

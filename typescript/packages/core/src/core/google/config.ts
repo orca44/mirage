@@ -1,0 +1,26 @@
+// ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+// ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
+export interface GoogleConfig {
+  clientId: string
+  // Optional: omit in browser PKCE flows. The PKCE verifier authenticates
+  // the client at the token endpoint, so no secret is sent.
+  clientSecret?: string
+  refreshToken: string
+  // Optional: caller-supplied refresh strategy. When provided, TokenManager
+  // delegates token refresh to this callback instead of calling Google's
+  // token endpoint directly. Useful when the client_secret must stay on a
+  // backend (e.g. a Vercel function proxy).
+  refreshFn?: (refreshToken: string) => Promise<{ accessToken: string; expiresIn: number }>
+}

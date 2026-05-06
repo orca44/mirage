@@ -1,0 +1,50 @@
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
+from pydantic import BaseModel, ConfigDict
+
+from mirage.resource.s3 import S3Config
+
+
+class R2Config(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    bucket: str
+    account_id: str | None = None
+    endpoint_url: str | None = None
+    access_key_id: str | None = None
+    secret_access_key: str | None = None
+    aws_profile: str | None = None
+    region: str = "auto"
+    timeout: int = 30
+    proxy: str | None = None
+
+    def resolved_endpoint_url(self) -> str:
+        if self.endpoint_url:
+            return self.endpoint_url
+        if self.account_id:
+            return f"https://{self.account_id}.r2.cloudflarestorage.com"
+        raise ValueError("R2Config requires account_id or endpoint_url")
+
+    def to_s3_config(self) -> S3Config:
+        return S3Config(
+            bucket=self.bucket,
+            region=self.region,
+            endpoint_url=self.resolved_endpoint_url(),
+            aws_access_key_id=self.access_key_id,
+            aws_secret_access_key=self.secret_access_key,
+            aws_profile=self.aws_profile,
+            timeout=self.timeout,
+            proxy=self.proxy,
+        )

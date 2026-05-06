@@ -1,0 +1,120 @@
+---
+title: OCI Object Storage
+icon: server
+description: Mount Oracle Cloud Infrastructure Object Storage as a virtual filesystem.
+---
+The OCI resource exposes an Oracle Cloud Infrastructure Object Storage
+bucket as a virtual filesystem. It uses the S3-compatible API internally.
+
+For credential setup, see [OCI Setup](/python/setup/oci).
+
+## Config
+
+```python
+import os
+
+from mirage import MountMode, Workspace
+from mirage.resource.oci import OCIConfig, OCIResource
+
+config = OCIConfig(
+    bucket=os.environ["OCI_BUCKET"],
+    namespace=os.environ["OCI_NAMESPACE"],
+    region=os.environ["OCI_REGION"],
+    access_key_id=os.environ["OCI_ACCESS_KEY_ID"],
+    secret_access_key=os.environ["OCI_SECRET_ACCESS_KEY"],
+)
+resource = OCIResource(config=config)
+ws = Workspace({"/oci": resource}, mode=MountMode.READ)
+```
+
+| Field              | Required | Default | Description                          |
+| ------------------ | -------- | ------- | ------------------------------------ |
+| `bucket`           | yes      |         | OCI bucket name                      |
+| `namespace`        | yes      |         | OCI tenancy namespace                |
+| `region`           | yes      |         | OCI region (e.g. `us-ashburn-1`)     |
+| `access_key_id`    | yes      |         | Customer secret key access ID        |
+| `secret_access_key`| yes      |         | Customer secret key                  |
+| `endpoint_url`     | no       | auto    | S3-compatible endpoint (auto-built from namespace + region) |
+| `timeout`          | no       | `30`    | Request timeout in seconds           |
+| `proxy`            | no       |         | HTTP proxy URL                       |
+
+## Filesystem Layout
+
+```text
+/oci/
+  <object-key-path>/
+    <file>
+```
+
+Object keys map directly to virtual paths. Directories are inferred
+from `/` delimiters in keys.
+
+Example:
+
+```text
+/oci/
+  data/
+    users.csv
+    logs/
+      2026-04-01.jsonl
+  config.json
+```
+
+## Cache
+
+Uses `IndexCacheStore` for directory listings with configurable TTL.
+File content caching is handled by the workspace.
+
+## Example
+
+```python
+import asyncio
+import os
+
+from dotenv import load_dotenv
+
+from mirage import MountMode, Workspace
+from mirage.resource.oci import OCIConfig, OCIResource
+
+load_dotenv(".env.development")
+
+config = OCIConfig(
+    bucket=os.environ["OCI_BUCKET"],
+    namespace=os.environ["OCI_NAMESPACE"],
+    region=os.environ["OCI_REGION"],
+    access_key_id=os.environ["OCI_ACCESS_KEY_ID"],
+    secret_access_key=os.environ["OCI_SECRET_ACCESS_KEY"],
+)
+resource = OCIResource(config=config)
+
+
+async def main():
+    ws = Workspace({"/oci": resource}, mode=MountMode.READ)
+
+    r = await ws.execute("ls /oci/")
+    print(await r.stdout_str())
+
+    r = await ws.execute("cat /oci/data/users.csv | head -n 5")
+    print(await r.stdout_str())
+
+    r = await ws.execute("find /oci/ -name '*.jsonl'")
+    print(await r.stdout_str())
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+## Shell Commands
+
+| Command         | Notes                                      |
+| --------------- | ------------------------------------------ |
+| `ls`            | List objects and prefixes                  |
+| `cat`           | Read object content                        |
+| `head` / `tail` | First/last N lines                         |
+| `grep` / `rg`   | Pattern search                             |
+| `jq`            | Query JSON objects                         |
+| `wc`            | Line/word/byte counts                      |
+| `stat`          | Object metadata (size, modified time)      |
+| `find`          | Recursive search with `-name`, `-maxdepth` |
+| `tree`          | Directory tree view                        |

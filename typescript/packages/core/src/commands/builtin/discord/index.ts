@@ -1,0 +1,48 @@
+// ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+// ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
+import type { RegisteredCommand } from '../../config.ts'
+import { DISCORD_CAT } from './cat.ts'
+import { DISCORD_ADD_REACTION } from './discord_add_reaction.ts'
+import { DISCORD_GET_SERVER_INFO } from './discord_get_server_info.ts'
+import { DISCORD_LIST_MEMBERS } from './discord_list_members.ts'
+import { DISCORD_SEND_MESSAGE } from './discord_send_message.ts'
+import { DISCORD_FIND } from './find.ts'
+import { DISCORD_GREP } from './grep.ts'
+import { DISCORD_HEAD } from './head.ts'
+import { DISCORD_JQ } from './jq.ts'
+import { DISCORD_LS } from './ls.ts'
+import { DISCORD_RG } from './rg.ts'
+import { DISCORD_STAT } from './stat.ts'
+import { DISCORD_TAIL } from './tail.ts'
+import { DISCORD_TREE } from './tree.ts'
+import { DISCORD_WC } from './wc.ts'
+
+export const DISCORD_COMMANDS: readonly RegisteredCommand[] = [
+  ...DISCORD_LS,
+  ...DISCORD_TREE,
+  ...DISCORD_CAT,
+  ...DISCORD_HEAD,
+  ...DISCORD_TAIL,
+  ...DISCORD_WC,
+  ...DISCORD_FIND,
+  ...DISCORD_GREP,
+  ...DISCORD_RG,
+  ...DISCORD_STAT,
+  ...DISCORD_JQ,
+  ...DISCORD_SEND_MESSAGE,
+  ...DISCORD_ADD_REACTION,
+  ...DISCORD_GET_SERVER_INFO,
+  ...DISCORD_LIST_MEMBERS,
+]

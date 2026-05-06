@@ -1,0 +1,136 @@
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
+from pathlib import Path
+
+import pytest
+from pydantic_ai import ToolReturn
+
+from mirage import MountMode, RAMResource, Workspace
+from mirage.agents.pydantic_ai.backend import PydanticAIWorkspace
+
+DATA_DIR = Path(__file__).resolve().parents[4] / "data"
+
+
+@pytest.fixture
+def workspace():
+    return Workspace({"/": RAMResource()}, mode=MountMode.WRITE)
+
+
+@pytest.fixture
+def backend(workspace):
+    return PydanticAIWorkspace(workspace)
+
+
+def test_id(backend):
+    assert backend.id == "mirage"
+
+
+def test_custom_id(workspace):
+    b = PydanticAIWorkspace(workspace, sandbox_id="custom")
+    assert b.id == "custom"
+
+
+@pytest.mark.asyncio
+async def test_aexecute_echo(backend):
+    resp = await backend.aexecute("echo hello")
+    assert resp.exit_code == 0
+    assert "hello" in resp.output
+
+
+@pytest.mark.asyncio
+async def test_aexecute_failing_command(backend):
+    resp = await backend.aexecute("cat /nonexistent")
+    assert resp.exit_code != 0
+
+
+@pytest.mark.asyncio
+async def test_awrite_and_aread(backend):
+    result = await backend.awrite("/test.txt", "hello world")
+    assert result.error is None
+
+    content = await backend.aread("/test.txt")
+    assert "hello world" in content
+
+
+@pytest.mark.asyncio
+async def test_awrite_existing_file_errors(backend):
+    await backend.awrite("/exists.txt", "first")
+    result = await backend.awrite("/exists.txt", "second")
+    assert result.error is not None
+
+
+@pytest.mark.asyncio
+async def test_aedit(backend):
+    await backend.awrite("/edit.txt", "foo bar baz")
+    result = await backend.aedit("/edit.txt", "bar", "qux")
+    assert result.error is None
+    content = await backend.aread("/edit.txt")
+    assert "qux" in content
+    assert "bar" not in content
+
+
+@pytest.mark.asyncio
+async def test_als_info(backend):
+    await backend.awrite("/dir/a.txt", "a")
+    await backend.awrite("/dir/b.txt", "b")
+    entries = await backend.als_info("/dir")
+    paths = [e["path"] for e in entries]
+    assert len(paths) == 2
+
+
+@pytest.mark.asyncio
+async def test_agrep_raw(backend):
+    await backend.awrite("/search.txt",
+                         "hello world\ngoodbye world\nhello again")
+    result = await backend.agrep_raw("hello", path="/")
+    assert isinstance(result, list)
+    assert len(result) >= 2
+
+
+@pytest.mark.asyncio
+async def test_aglob_info(backend):
+    await backend.awrite("/data/a.txt", "a")
+    await backend.awrite("/data/b.py", "b")
+    entries = await backend.aglob_info("*.txt", path="/data")
+    paths = [e["path"] for e in entries]
+    assert any("a.txt" in p for p in paths)
+    assert not any("b.py" in p for p in paths)
+
+
+@pytest.mark.asyncio
+async def test_execute_pipe(backend):
+    await backend.awrite("/pipe.txt", "aaa\nbbb\nccc\naaa\n")
+    resp = await backend.aexecute("cat /pipe.txt | sort | uniq | wc -l")
+    assert resp.exit_code == 0
+    assert "3" in resp.output
+
+
+@pytest.mark.asyncio
+async def test_read_bytes(backend):
+    await backend.awrite("/bytes.txt", "binary content")
+    data = await backend._aread_bytes("/bytes.txt")
+    assert data == b"binary content"
+
+
+@pytest.mark.asyncio
+async def test_aread_pdf_returns_tool_return(backend, workspace):
+    with open(DATA_DIR / "example.pdf", "rb") as f:
+        pdf_bytes = f.read()
+    await workspace.ops.write("/report.pdf", pdf_bytes)
+
+    result = await backend.aread("/report.pdf")
+    assert isinstance(result, ToolReturn)
+    assert "report.pdf" in result.return_value
+    assert len(result.content) > 0

@@ -1,0 +1,104 @@
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
+from mirage.workspace.session import Session
+
+
+def test_session_defaults():
+    s = Session(session_id="test")
+    assert s.session_id == "test"
+    assert s.cwd == "/"
+    assert s.env == {}
+    assert s.functions == {}
+    assert s.last_exit_code == 0
+    assert s._stdin_buffer is None
+
+
+def test_session_custom_cwd():
+    s = Session(session_id="s1", cwd="/data")
+    assert s.cwd == "/data"
+
+
+def test_session_env():
+    s = Session(session_id="s1", env={"A": "1", "B": "2"})
+    assert s.env["A"] == "1"
+    assert s.env["B"] == "2"
+
+
+def test_session_env_mutation():
+    s = Session(session_id="s1")
+    s.env["X"] = "hello"
+    assert s.env["X"] == "hello"
+    del s.env["X"]
+    assert "X" not in s.env
+
+
+def test_session_functions():
+    s = Session(session_id="s1")
+    s.functions["myfunc"] = "body"
+    assert "myfunc" in s.functions
+
+
+def test_session_exit_code():
+    s = Session(session_id="s1")
+    s.last_exit_code = 42
+    assert s.last_exit_code == 42
+
+
+def test_session_stdin_buffer():
+    s = Session(session_id="s1")
+    s._stdin_buffer = b"hello\n"
+    assert s._stdin_buffer == b"hello\n"
+    s._stdin_buffer = None
+    assert s._stdin_buffer is None
+
+
+def test_session_to_dict():
+    s = Session(session_id="s1", cwd="/data", env={"K": "V"})
+    d = s.to_dict()
+    assert d["session_id"] == "s1"
+    assert d["cwd"] == "/data"
+    assert d["env"] == {"K": "V"}
+    assert "created_at" in d
+
+
+def test_session_from_dict():
+    d = {
+        "session_id": "s2",
+        "cwd": "/tmp",
+        "env": {
+            "A": "1"
+        },
+        "created_at": 123.0
+    }
+    s = Session.from_dict(d)
+    assert s.session_id == "s2"
+    assert s.cwd == "/tmp"
+    assert s.env["A"] == "1"
+    assert s.created_at == 123.0
+
+
+def test_session_roundtrip():
+    original = Session(session_id="rt", cwd="/x", env={"K": "V"})
+    restored = Session.from_dict(original.to_dict())
+    assert restored.session_id == original.session_id
+    assert restored.cwd == original.cwd
+    assert restored.env == original.env
+
+
+def test_session_independent_envs():
+    s1 = Session(session_id="a")
+    s2 = Session(session_id="b")
+    s1.env["X"] = "1"
+    assert "X" not in s2.env

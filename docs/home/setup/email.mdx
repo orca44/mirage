@@ -1,0 +1,88 @@
+---
+title: Email
+icon: envelope
+description: Set up IMAP/SMTP credentials for the Email resource.
+---
+
+## Credentials
+
+The Email resource connects to any email account via IMAP (reading)
+and SMTP (sending). You need the server hostnames and a password or
+app password.
+
+### 1. Find Your IMAP/SMTP Settings
+
+| Resource    | IMAP Host               | IMAP Port | SMTP Host             | SMTP Port |
+| ----------- | ----------------------- | --------- | --------------------- | --------- |
+| Outlook/365 | `outlook.office365.com` | 993       | `smtp.office365.com`  | 587       |
+| Yahoo       | `imap.mail.yahoo.com`   | 993       | `smtp.mail.yahoo.com` | 587       |
+| Fastmail    | `imap.fastmail.com`     | 993       | `smtp.fastmail.com`   | 587       |
+| iCloud      | `imap.mail.me.com`      | 993       | `smtp.mail.me.com`    | 587       |
+| ProtonMail  | `127.0.0.1`             | 1143      | `127.0.0.1`           | 1025      |
+| Self-hosted | Your server hostname    | 993       | Your server hostname  | 587       |
+
+ProtonMail requires [ProtonMail Bridge](https://proton.me/mail/bridge)
+running locally.
+
+### 2. Create an App Password
+
+Most resources require an **app password** instead of your regular
+account password. This is a one-time password specifically for
+third-party apps.
+
+**Outlook / Microsoft 365:**
+
+1. Go to https://account.microsoft.com/security
+1. **Security** -> **Advanced security options**
+1. **App passwords** -> **Create a new app password**
+1. Copy the generated password
+
+**Yahoo:**
+
+1. Go to https://login.yahoo.com/account/security
+1. **Generate app password**
+1. Select **Other App**, name it (e.g., "Mirage")
+1. Copy the generated password
+
+**Fastmail:**
+
+1. Go to https://www.fastmail.com/settings/security/tokens
+1. **New App Password**
+1. Select **IMAP/SMTP** access
+1. Copy the generated password
+
+**iCloud:**
+
+1. Go to https://appleid.apple.com/account/manage
+1. **Sign-In and Security** -> **App-Specific Passwords**
+1. **Generate an app-specific password**
+1. Copy the generated password
+
+**Self-hosted / Other:**
+
+Use your regular email password, or whatever your mail server
+requires.
+
+### 3. Set Environment Variables
+
+```bash
+# .env.development
+IMAP_HOST=imap.fastmail.com
+SMTP_HOST=smtp.fastmail.com
+EMAIL_USERNAME=you@fastmail.com
+EMAIL_PASSWORD=your-app-password
+```
+
+## Troubleshooting
+
+**"Authentication failed"** - Make sure you're using an app password,
+not your regular account password. Most resources block regular
+passwords for IMAP/SMTP access.
+
+**"Connection refused"** - Check the hostname and port. Some networks
+block port 993/587. For ProtonMail, make sure Bridge is running.
+
+**"SSL handshake failed"** - If your server uses STARTTLS on port 143
+instead of SSL on port 993, set `use_ssl=False` and `imap_port=143`.
+
+For Python configuration, see the [Python Email Setup](/python/setup/email) guide.

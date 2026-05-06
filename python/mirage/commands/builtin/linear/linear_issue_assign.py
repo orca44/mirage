@@ -1,0 +1,64 @@
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
+import json
+
+from mirage.accessor.linear import LinearAccessor
+from mirage.commands.registry import command
+from mirage.commands.spec.types import CommandSpec, OperandKind, Option
+from mirage.core.linear._client import (issue_update, resolve_issue_id,
+                                        resolve_user_id)
+from mirage.core.linear.normalize import normalize_issue
+from mirage.io.stream import yield_bytes
+from mirage.io.types import ByteSource, IOResult
+from mirage.types import PathSpec
+
+SPEC = CommandSpec(options=(
+    Option(long="--issue_id", value_kind=OperandKind.TEXT),
+    Option(long="--issue_key", value_kind=OperandKind.TEXT),
+    Option(long="--assignee_id", value_kind=OperandKind.TEXT),
+    Option(long="--assignee_email", value_kind=OperandKind.TEXT),
+), )
+
+
+@command("linear-issue-assign", resource="linear", spec=SPEC)
+async def linear_issue_assign(
+    accessor: LinearAccessor,
+    paths: list[PathSpec],
+    *texts: str,
+    **_extra: object,
+) -> tuple[ByteSource | None, IOResult]:
+    config = accessor.config
+    issue_id = await resolve_issue_id(
+        config,
+        issue_id=_extra.get("issue_id")
+        if isinstance(_extra.get("issue_id"), str) else None,
+        issue_key=_extra.get("issue_key") if isinstance(
+            _extra.get("issue_key"), str) else None,
+    )
+    assignee_id = await resolve_user_id(
+        config,
+        assignee_id=_extra.get("assignee_id") if isinstance(
+            _extra.get("assignee_id"), str) else None,
+        assignee_email=_extra.get("assignee_email") if isinstance(
+            _extra.get("assignee_email"), str) else None,
+    )
+    issue = await issue_update(config,
+                               issue_id=issue_id,
+                               title=None,
+                               description=None,
+                               assignee_id=assignee_id)
+    return yield_bytes(
+        json.dumps(normalize_issue(issue),
+                   ensure_ascii=False).encode()), IOResult()

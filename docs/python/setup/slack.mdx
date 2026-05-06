@@ -1,0 +1,29 @@
+---
+title: Slack
+icon: slack
+description: Set up the Slack resource in Python.
+---
+
+## Dependencies
+
+No additional dependencies - uses `aiohttp` (included).
+
+For credential setup, see the [Slack Setup](/home/setup/slack) guide.
+
+## Configuration
+
+```python
+import os
+from mirage import Workspace, MountMode
+from mirage.resource.slack import SlackConfig, SlackResource
+
+config = SlackConfig(token=os.environ["SLACK_BOT_TOKEN"])
+resource = SlackResource(config=config)
+ws = Workspace({"/slack/": resource}, mode=MountMode.READ)
+```
+
+## Config Reference
+
+| Field   | Required | Description                             |
+| ------- | -------- | --------------------------------------- |
+| `token` | Yes      | Slack Bot User OAuth Token (`xoxb-...`) |

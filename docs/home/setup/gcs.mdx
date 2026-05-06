@@ -1,0 +1,26 @@
+---
+title: Google Cloud Storage
+icon: google
+description: Set up Google Cloud Storage credentials for the GCS resource.
+---
+
+## Credentials
+
+### 1. Create HMAC Keys
+
+1. Go to https://console.cloud.google.com/storage/settings -> **Interoperability**
+1. Under **Service account HMAC**, click **Create a key for a service account**
+1. Select a service account with Storage Object Viewer (read) or
+   Storage Object Admin (read/write)
+1. Copy the **Access key** and **Secret**
+
+### 2. Set Environment Variables
+
+```bash
+# .env.development
+GCS_BUCKET=mirage-ai
+GCS_ACCESS_KEY_ID=GOOG...
+GCS_SECRET_ACCESS_KEY=...
+```
+
+For Python configuration, see the [Python GCS Setup](/python/setup/gcs) guide.

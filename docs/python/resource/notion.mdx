@@ -1,0 +1,175 @@
+---
+title: Notion
+icon: book
+description: Mount Notion pages as a virtual filesystem.
+---
+The Notion resource exposes a Notion workspace as a virtual filesystem
+mounted at a prefix such as `/notion/`.
+
+For API key setup, see [Notion Setup](/python/setup/notion).
+
+## Config
+
+```python
+import os
+
+from mirage import MountMode, Workspace
+from mirage.resource.notion import NotionConfig, NotionResource
+
+config = NotionConfig(api_key=os.environ["NOTION_API_KEY"])
+resource = NotionResource(config=config)
+ws = Workspace({"/notion": resource}, mode=MountMode.WRITE)
+```
+
+| Field      | Required | Default                        | Description             |
+| ---------- | -------- | ------------------------------ | ----------------------- |
+| `api_key`  | yes      |                                | Notion integration token |
+| `base_url` | no       | `https://api.notion.com/v1`    | API base URL            |
+
+## Filesystem Layout
+
+```text
+/notion/
+  pages/
+    <page-title>__<page-id>/
+      page.json
+      <child-page-title>__<child-id>/
+        page.json
+        ...
+```
+
+Example:
+
+```text
+/notion/
+  pages/
+    Project-Roadmap__a1b2c3d4/
+      page.json
+      Q1-Goals__e5f6g7h8/
+        page.json
+      Q2-Goals__i9j0k1l2/
+        page.json
+    Meeting-Notes__m3n4o5p6/
+      page.json
+```
+
+The hierarchy mirrors Notion's page tree. Each page directory contains
+a `page.json` file with the page metadata and content. Child pages
+appear as nested directories.
+
+## Cache
+
+Uses `IndexCacheStore` for page metadata. No separate content
+cache - file content caching is handled by the workspace `IOResult`
+mechanism.
+
+## Example
+
+```python
+import asyncio
+import os
+
+from dotenv import load_dotenv
+
+from mirage import MountMode, Workspace
+from mirage.resource.notion import NotionConfig, NotionResource
+
+load_dotenv(".env.development")
+
+config = NotionConfig(api_key=os.environ["NOTION_API_KEY"])
+resource = NotionResource(config=config)
+
+
+async def main():
+    ws = Workspace({"/notion": resource}, mode=MountMode.WRITE)
+
+    # List top-level pages
+    r = await ws.execute("ls /notion/pages/")
+    print(await r.stdout_str())
+
+    # Read a page
+    r = await ws.execute(
+        'cat "/notion/pages/Project-Roadmap__a1b2c3d4/page.json"'
+    )
+    print(await r.stdout_str())
+
+    # Search across all pages
+    r = await ws.execute('grep "deadline" /notion/pages/')
+    print(await r.stdout_str())
+
+    # Tree view
+    r = await ws.execute("tree -L 2 /notion/")
+    print(await r.stdout_str())
+
+    # Create a new page
+    r = await ws.execute(
+        'notion-page-create --parent_id a1b2c3d4'
+        ' --title "New Page" --content "Hello from Mirage"'
+    )
+    print(await r.stdout_str())
+
+    # Append content to an existing page
+    r = await ws.execute(
+        'notion-block-append --page_id a1b2c3d4'
+        ' --content "Appended paragraph"'
+    )
+    print(await r.stdout_str())
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+## Shell Commands
+
+Standard commands available on the mounted Notion tree:
+
+| Command         | Notes                                      |
+| --------------- | ------------------------------------------ |
+| `ls`            | List pages and child pages                 |
+| `cat`           | Read page.json content                     |
+| `head` / `tail` | First/last N lines                         |
+| `grep` / `rg`   | Search across pages                        |
+| `jq`            | Query page JSON fields                     |
+| `wc`            | Line/word/byte counts                      |
+| `stat`          | File metadata                              |
+| `find`          | Recursive search with `-name`, `-maxdepth` |
+| `tree`          | Directory tree view                        |
+
+Resource-specific commands:
+
+### `notion-page-create`
+
+Create a new page under a parent page.
+
+| Option        | Required | Description                |
+| ------------- | -------- | -------------------------- |
+| `--parent_id` | yes      | Parent page ID             |
+| `--title`     | yes      | Page title                 |
+| `--content`   | no       | Initial paragraph content  |
+
+### `notion-block-append`
+
+Append content blocks to an existing page.
+
+| Option      | Required | Description              |
+| ----------- | -------- | ------------------------ |
+| `--page_id` | yes      | Target page ID           |
+| `--content` | yes      | Text content to append   |
+
+### `notion-comment-add`
+
+Add a comment to a page.
+
+| Option      | Required | Description            |
+| ----------- | -------- | ---------------------- |
+| `--page_id` | yes      | Target page ID         |
+| `--text`    | yes      | Comment text           |
+
+### `notion-search`
+
+Search for pages by title.
+
+| Option    | Required | Description  |
+| --------- | -------- | ------------ |
+| `--query` | yes      | Search query |

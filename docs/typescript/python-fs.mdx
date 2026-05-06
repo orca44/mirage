@@ -1,0 +1,185 @@
+---
+title: Python FS shim
+icon: file-binary
+description: Use Python's open(), os.listdir, pathlib, PIL, pandas, directly against any Mirage mount.
+---
+
+Python code inside `ws.execute('python3 ...')` can `open()`, `os.listdir()`, `pathlib.Path()` etc. against any registered Mirage mount. The shim routes those calls through Mirage's mount layer (RAM, S3, Linear, GDocs, Slack, anything you've registered).
+
+```python
+# inside python3
+import json
+team = json.load(open('/linear/teams/eng/team.json'))   # reads through Linear's API
+open('/ram/notes.txt', 'w').write('hello')              # writes flush back to RAMResource
+```
+
+## What works
+
+<Tabs>
+  <Tab title="Read a file">
+    ```python
+    open('/s3/data.csv').read()
+    open('/linear/teams/eng/team.json').read()
+    open('/gdocs/owned/MyDoc.gdoc.json').read()
+    ```
+    The first read fetches via the resource and caches in MEMFS. Subsequent reads are sync.
+  </Tab>
+  <Tab title="Write a file">
+    ```python
+    open('/ram/out.txt', 'w').write('hello')
+    open('/s3/icon.png', 'wb').write(png_bytes)
+    ```
+    On `close()`, bytes flush back through the resource's `write` op.
+  </Tab>
+  <Tab title="List a directory">
+    ```python
+    import os
+    for entry in os.listdir('/linear/teams/'):
+        print(entry)
+
+    # Synthesized paths work too, Gmail materializes date dirs on access:
+    for msg_dir in os.listdir('/gmail/INBOX/2026-05-03/'):
+        print(msg_dir)
+    ```
+    The first `listdir` of a synthesized path triggers a one-time bridge fetch.
+  </Tab>
+  <Tab title="pathlib & glob">
+    ```python
+    from pathlib import Path
+    Path('/gdocs/owned/MyDoc.gdoc.json').read_text()
+
+    import glob
+    for f in glob.glob('/ram/*.txt'):
+        print(f)
+    ```
+  </Tab>
+  <Tab title="Native libs">
+    ```python
+    from PIL import Image
+    Image.new('RGB', (4, 4), color='red').save('/ram/icon.png')
+
+    import json
+    json.dump({'k': 'v'}, open('/ram/cfg.json', 'w'))
+
+    import numpy as np
+    np.save('/ram/arr.npy', np.arange(10))
+    ```
+    Anything that goes through Python's `open()` works (PIL, numpy, pandas, json, pickle).
+  </Tab>
+  <Tab title="Cross-mount">
+    ```python
+    # Read from one mount, write to another, same Python code:
+    import os, json
+
+    out = []
+    for t in os.listdir('/linear/teams/')[:5]:
+        team = json.load(open(f'/linear/teams/{t}/team.json'))
+        out.append({'name': team['name']})
+
+    json.dump(out, open('/ram/summary.json', 'w'), indent=2)
+    ```
+  </Tab>
+</Tabs>
+
+## What doesn't work
+
+| Case | Why | Workaround |
+|---|---|---|
+| **C extensions calling `fopen` directly**, `sqlite3.connect('/ram/db.sqlite')`, `h5py.File('/ram/x.h5')` | They bypass Python's `open()` and the shim never sees them | Use a local copy, or stream bytes via stdin |
+| **External edits show up live**, someone else edits the GDoc while you're reading | Once a path is in MEMFS the shim doesn't re-fetch it | Currently no API; must `unmount` + `addMount` |
+| **Huge mounts**, preloading a 100GB S3 bucket | Every byte lives in MEMFS until close | Mount a narrower prefix |
+| **Concurrent writers**, two Python processes write the same path | Last `close()` wins, no conflict detection | Out of scope for v1 |
+| **Browser-only resources from Node**, OPFS | OPFS isn't a thing in Node | Run in a browser-side Mirage |
+
+## How it works (one paragraph)
+
+Pyodide's in-memory FS (MEMFS) is the sync facade. At `addMount`, Mirage walks the prefix and copies files into MEMFS. Python reads hit MEMFS directly, fast, no network. On a **miss** (path not yet in MEMFS but the prefix is registered), the shim catches the error, calls back through the bridge via JSPI to fetch it, populates MEMFS, and retries. Writes are intercepted on `close()` and flushed back through Mirage's `write` op.
+
+```
+Python open() / listdir()
+        │
+        ▼
+   Pyodide MEMFS  ──hit──►  bytes
+        │
+       miss
+        │
+        ▼
+   run_sync(_mirage_bridge.list/fetch)
+        │
+        ▼
+   populate MEMFS, retry
+```
+
+## Quick start (TypeScript)
+
+```ts
+import { Workspace, RAMResource, S3Resource, MountMode } from '@struktoai/mirage-node'
+
+const ws = new Workspace({}, { mode: MountMode.WRITE })
+ws.addMount('/ram', new RAMResource(), MountMode.WRITE)
+ws.addMount('/s3', new S3Resource({ bucket: 'my-bucket', region: 'us-east-1' }), MountMode.READ)
+
+await ws.fs.writeFile('/ram/in.json', '{"hello":"world"}')
+
+const r = await ws.execute(`python3 -c '
+import json
+print(json.load(open("/ram/in.json"))["hello"])
+'`)
+console.log(r.stdoutText)  // "world"
+```
+
+See the full demo at [`examples/typescript/python/vfs.ts`](https://github.com/strukto-ai/mirage/blob/main/examples/typescript/python/vfs.ts).
+
+## Python packages (PIL, numpy, pandas, …)
+
+Pyodide ships CPython, but third-party packages aren't loaded until you import them. Mirage scans the code you run for `import` statements and **auto-fetches matching packages on demand**, so `from PIL import Image`, `import numpy as np`, `import pandas as pd` all just work the first time. Subsequent calls hit Pyodide's package cache.
+
+If you need to opt out (e.g., to keep workspace startup lean):
+
+```ts
+new Workspace({}, { python: { autoLoadFromImports: false } })
+```
+
+## Resource compatibility
+
+| Resource | Status |
+|---|---|
+| RAM, OPFS (browser), Disk | ✅ |
+| S3, R2, GCS, OCI, Supabase | ✅ (narrow the prefix to keep the working set small) |
+| Linear, GDocs, GSheets, GSlides, GDrive | ✅ |
+| GitHub, Redis | ✅ |
+| Gmail (including synthesized date dirs) | ✅ (lazy-fetched on first access) |
+| Slack | ⚠️ preloads channel histories; large workspaces may be slow |
+
+## Runtime requirements
+
+The shim uses [JSPI](https://github.com/WebAssembly/js-promise-integration) to bridge sync Python calls to async JS.
+
+- **Chrome / Edge 137+** (May 2025): works out of the box
+- **Firefox**: behind `javascript.options.wasm_js_promise_integration`
+- **Node 24+**: pass `--experimental-wasm-jspi` (vitest config already does this)
+- **Cloudflare Workers**: Python Workers with JSPI runtime
+
+<Note>
+Without JSPI, **reads** of preloaded files still work but **writes** throw `RuntimeError: Cannot stack switch` on `close()`.
+</Note>
+
+To run examples directly:
+
+```bash
+node --experimental-wasm-jspi --import tsx/esm examples/typescript/python/vfs.ts
+```
+
+## Errors you might see
+
+| Symptom | What it means |
+|---|---|
+| `FileNotFoundError [Errno 44]` | Path isn't in MEMFS and lazy fetch failed too. Check the preceding `console.warn: mirage lazy: ...` for the real reason (auth, network, bad path). |
+| `console.warn: mirage lazy: list <path> failed` | The lazy backfill called `_mirage_bridge.list` and got rejected. Followed by `FileNotFoundError`. |
+| `RuntimeError: Cannot stack switch` | JSPI not enabled. Pass the Node flag or upgrade browser. |
+| `console.warn: mirage preload: skipping <path>` | A single entry failed during initial preload, others continued. Usually harmless (synthetic listing entries). |
+
+## See also
+
+- [`python`](/typescript/python): broader `python3` builtin behavior (env, argv, stdin, exit codes)
+- [`examples/typescript/python/vfs.ts`](https://github.com/strukto-ai/mirage/blob/main/examples/typescript/python/vfs.ts): runnable demo across RAM, S3, GDocs, Linear

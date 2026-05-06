@@ -1,0 +1,69 @@
+---
+title: OCI Object Storage
+icon: server
+description: Set up Oracle Cloud Infrastructure Object Storage credentials for the OCI resource.
+---
+
+## Credentials
+
+The OCI resource needs:
+
+- an Object Storage bucket
+- your Object Storage namespace
+- your OCI region
+- a Customer Secret Key pair for the S3 Compatibility API
+
+### 1. Create a Bucket
+
+1. Open the OCI Console
+1. Go to `Storage` -> `Buckets`
+1. Choose the target compartment
+1. Click `Create bucket`
+1. Enter the bucket name, such as `mirage`
+1. Keep the storage tier as `Standard` unless you specifically want archive
+
+If you want MIRAGE data under a prefix like `data/`, create objects under that
+prefix inside the bucket. The prefix is not part of the bucket name.
+
+### 2. Get the Namespace
+
+1. Open the profile menu in the OCI Console
+1. Go to `Tenancy`
+1. Copy the Object Storage namespace string, such as `idsiqbdbcr4i`
+
+You can also fetch it with:
+
+```bash
+oci os ns get
+```
+
+### 3. Get S3-compatible Keys
+
+1. Open the profile menu
+1. Go to `User settings`
+1. Open `Customer secret keys`
+1. Click `Generate secret key`
+1. Copy both the `Access Key` and `Secret Key`
+
+Oracle only shows the secret once, so save it immediately.
+
+### 4. Find the Region
+
+Use the OCI Console region selector in the top-right. For example:
+
+- `us-ashburn-1`
+- `us-phoenix-1`
+- `eu-frankfurt-1`
+
+### 5. Set Environment Variables
+
+```bash
+# .env.development
+OCI_BUCKET=mirage
+OCI_NAMESPACE=idsiqbdbcr4i
+OCI_REGION=us-ashburn-1
+OCI_ACCESS_KEY_ID=...
+OCI_SECRET_ACCESS_KEY=...
+```
+
+For Python configuration, see the [Python OCI Setup](/python/setup/oci) guide.

@@ -1,0 +1,63 @@
+---
+title: Installation
+description: Install Mirage with the Python package mirage-ai or the TypeScript packages @struktoai/mirage-node and @struktoai/mirage-browser.
+keywords: ["install Mirage", "mirage-ai", "@struktoai/mirage-node", "virtual filesystem", "AI agents"]
+icon: download
+---
+
+## Prerequisites
+
+- **Python** ≥ 3.12 for the `mirage-ai` package and the `mirage` CLI
+- **Node.js** ≥ 20 for the TypeScript SDK
+- **macOS** or **Linux** (FUSE-based mounts require platform support)
+
+## Python
+
+```bash
+uv add mirage-ai
+```
+
+This installs both the `mirage` library and the `mirage` CLI binary.
+
+## TypeScript
+
+```bash
+npm install mirage
+```
+
+One package, three entrypoints. Pick the one that matches your runtime:
+
+- `mirage/node`: Node.js servers and CLIs
+- `mirage/browser`: browser / edge runtimes
+- `mirage/core`: runtime-agnostic primitives
+
+## CLI
+
+```bash
+curl -fsSL https://strukto.ai/install.sh | sh
+```
+
+Or via your package manager of choice:
+
+```bash
+brew install mirage
+```
+
+```bash
+uvx mirage-ai
+```
+
+```bash
+npx mirage
+```
+
+## More Details
+
+<CardGroup cols={2}>
+  <Card title="Python" icon="/images/python-logo.svg" href="/python/install">
+    Resource extras, virtualenv setup, and `uv` workflow.
+  </Card>
+  <Card title="TypeScript" icon="/images/typescript-logo.svg" href="/typescript/install">
+    Native peers (FUSE, Redis) and per-runtime notes for Node, browser, and edge.
+  </Card>
+</CardGroup>

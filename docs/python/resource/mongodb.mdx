@@ -1,0 +1,290 @@
+---
+title: MongoDB
+icon: database
+---
+The MongoDB resource exposes MongoDB databases, collections, and documents
+as a virtual filesystem mounted at some prefix such as `/mongodb/`.
+
+For connection setup, see [MongoDB Setup](/python/setup/mongodb).
+
+## Config
+
+```python
+import os
+
+from mirage import MountMode, Workspace
+from mirage.resource.mongodb import MongoDBConfig, MongoDBResource
+
+config = MongoDBConfig(
+    uri=os.environ["MONGODB_URI"],
+    default_doc_limit=1000,
+    default_search_limit=100,
+    max_doc_limit=5000,
+)
+resource = MongoDBResource(config=config)
+ws = Workspace({"/mongodb": resource}, mode=MountMode.READ)
+```
+
+| Config field           | Required | Default | Description                                        |
+| ---------------------- | -------- | ------- | -------------------------------------------------- |
+| `uri`                  | yes      |         | MongoDB connection URI                             |
+| `databases`            | no       |         | List of database names to mount (omit for all)     |
+| `default_doc_limit`    | no       | 1000    | Default doc cap for `cat`, `jq`, file-level `grep` |
+| `default_search_limit` | no       | 100     | Default result cap for collection/db-level `grep`  |
+| `max_doc_limit`        | no       | 5000    | Hard cap for `head -n K` / `tail -n K`             |
+
+## Filesystem Layout
+
+### All databases (databases omitted)
+
+```text
+/mongodb/
+  <database>/
+    <collection>.jsonl
+    ...
+  ...
+```
+
+Example:
+
+```text
+/mongodb/
+  sample_mflix/
+    movies.jsonl
+    comments.jsonl
+    users.jsonl
+    theaters.jsonl
+  sample_analytics/
+    accounts.jsonl
+    transactions.jsonl
+    customers.jsonl
+  sample_airbnb/
+    listingsAndReviews.jsonl
+```
+
+### Filtered databases
+
+```python
+config = MongoDBConfig(
+    uri=os.environ["MONGODB_URI"],
+    databases=["sample_mflix", "sample_analytics"],
+)
+```
+
+```text
+/mongodb/
+  sample_mflix/
+    movies.jsonl
+    comments.jsonl
+    users.jsonl
+  sample_analytics/
+    accounts.jsonl
+    transactions.jsonl
+    customers.jsonl
+```
+
+### Single database
+
+When `databases` contains exactly one entry, the database directory
+layer is skipped:
+
+```text
+/mongodb/
+  movies.jsonl
+  comments.jsonl
+  users.jsonl
+  theaters.jsonl
+```
+
+### Collections
+
+Each `.jsonl` file represents a collection. Each line is a JSON object
+representing one document. The `_id` field is serialized as a string.
+
+## Limits
+
+All document-reading commands enforce limits to prevent dumping huge
+collections:
+
+| Command                      | Limit behavior                                                  |
+| ---------------------------- | --------------------------------------------------------------- |
+| `cat`                        | Returns up to `default_doc_limit` docs, appends truncation note |
+| `head -n K` / `tail -n K`    | K is capped at `max_doc_limit`; server-side sort+limit          |
+| `grep` (file level)          | Inherits `default_doc_limit` when downloading                   |
+| `grep` (collection/db level) | Server-side query, capped at `default_search_limit`             |
+| `jq`                         | Inherits `default_doc_limit`                                    |
+| `wc`                         | Uses `countDocuments()` server-side - zero download             |
+| `stat`                       | Metadata only (doc count, indexes, size in extra dict)          |
+
+When a limit is hit, the output includes a truncation notice:
+
+```text
+[truncated: showing 1000/125000 documents]
+```
+
+## Smart Commands
+
+### grep at different scopes
+
+`grep` uses MongoDB's query engine at directory scopes instead of
+downloading documents:
+
+```bash
+# FILE level - downloads docs (up to default_doc_limit), greps locally
+grep "Godfather" "/mongodb/sample_mflix/movies.jsonl"
+
+# COLLECTION level - uses MongoDB query engine
+grep "Godfather" "/mongodb/sample_mflix/"
+
+# DATABASE level - searches across all collections in sample_mflix
+grep "Godfather" "/mongodb/sample_mflix/"
+
+# ROOT level (all databases) - searches across all databases
+grep "Godfather" "/mongodb/"
+```
+
+At collection or higher scope, the resource automatically picks the best
+server-side search strategy based on available indexes:
+
+1. **Text index exists** → uses `$text` query (fast, ranked by relevance)
+1. **Atlas Search index exists** → uses `$search` aggregation (fuzzy, Lucene-based)
+1. **Neither** → falls back to `$regex` on string fields (still server-side, no download)
+
+Scope detection is handled by `mirage/core/mongodb/scope.py`.
+
+### head / tail
+
+`head` and `tail` use MongoDB's `sort` + `limit` instead of downloading
+documents. The requested count is capped at `max_doc_limit`:
+
+```bash
+# Returns first 10 documents (sorted by _id ascending)
+head -n 10 "/mongodb/sample_mflix/movies.jsonl"
+
+# Returns last 10 documents (sorted by _id descending)
+tail -n 10 "/mongodb/sample_mflix/movies.jsonl"
+
+# Requesting more than max_doc_limit gets capped silently
+head -n 100000 "/mongodb/sample_mflix/movies.jsonl"  # → returns max_doc_limit (5000)
+```
+
+## Cache
+
+The MongoDB resource uses `IndexCacheStore` (same as RAM/S3/disk/GitHub).
+Index entries store database names, collection names, and document counts.
+There is no separate content cache - file content caching is handled by
+the workspace `IOResult` mechanism.
+
+## Example
+
+```python
+import asyncio
+import os
+
+from dotenv import load_dotenv
+
+from mirage import MountMode, Workspace
+from mirage.resource.mongodb import MongoDBConfig, MongoDBResource
+
+load_dotenv(".env.development")
+
+config = MongoDBConfig(uri=os.environ["MONGODB_URI"])
+resource = MongoDBResource(config=config)
+
+
+async def main():
+    ws = Workspace({"/mongodb": resource}, mode=MountMode.READ)
+
+    # List all databases
+    r = await ws.execute("ls /mongodb/")
+    print(await r.stdout_str())
+
+    # List collections in a database
+    r = await ws.execute("ls /mongodb/sample_mflix/")
+    print(await r.stdout_str())
+
+    # Read first 5 movies
+    r = await ws.execute('head -n 5 "/mongodb/sample_mflix/movies.jsonl"')
+    print(await r.stdout_str())
+
+    # Read last 5 movies
+    r = await ws.execute('tail -n 5 "/mongodb/sample_mflix/movies.jsonl"')
+    print(await r.stdout_str())
+
+    # Extract titles with jq
+    r = await ws.execute(
+        'jq -r ".[] | .title" "/mongodb/sample_mflix/movies.jsonl"')
+    print(await r.stdout_str())
+
+    # Search across a database (uses MongoDB query engine)
+    r = await ws.execute('grep "Godfather" "/mongodb/sample_mflix/"')
+    print(await r.stdout_str())
+
+    # Count documents (server-side, no download)
+    r = await ws.execute('wc -l "/mongodb/sample_mflix/movies.jsonl"')
+    print(await r.stdout_str())
+
+    # View all databases at a glance
+    r = await ws.execute("tree -L 1 /mongodb/")
+    print(await r.stdout_str())
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+See `examples/chat/mongodb.py` for the full working example.
+
+## Finding IDs
+
+MongoDB document `_id` fields are accessible in the JSONL output:
+
+```bash
+# List document IDs
+jq -r '.[] | ._id' "/mongodb/sample_mflix/movies.jsonl" | head -n 10
+
+# Find a specific document by ID
+grep "573a1390f29313caabcd4135" "/mongodb/sample_mflix/movies.jsonl"
+
+# Extract specific fields
+jq -r '.[] | "\(._id) \(.title) \(.year)"' "/mongodb/sample_mflix/movies.jsonl"
+```
+
+## Working with Large Collections
+
+Tips for efficient access on collections with many documents:
+
+```bash
+# Check document count (server-side, no download)
+wc -l "/mongodb/sample_mflix/comments.jsonl"
+
+# Read only recent documents (sorted by _id desc)
+tail -n 10 "/mongodb/sample_mflix/comments.jsonl"
+
+# Search uses MongoDB query engine at collection/database level (no download)
+grep "great movie" "/mongodb/sample_mflix/comments.jsonl"
+
+# Extract specific fields
+jq -r '.[] | "\(.name): \(.text)"' "/mongodb/sample_mflix/comments.jsonl" | head -n 20
+
+```
+
+Note: `grep`/`rg` at collection or database level uses MongoDB's query
+engine instead of downloading all documents, making it efficient even
+for large collections.
+
+## Shell Commands
+
+Standard commands available on the mounted MongoDB tree:
+
+| Command         | Notes                                                     |
+| --------------- | --------------------------------------------------------- |
+| `ls`            | List databases, collections                               |
+| `cat`           | Read collection docs (capped at `default_doc_limit`)      |
+| `head` / `tail` | Smart: server-side sort+limit (capped at `max_doc_limit`) |
+| `grep` / `rg`   | Smart: uses MongoDB query engine at collection/db scope   |
+| `jq`            | Query JSON; use `.[]` prefix for JSONL files              |
+| `wc`            | Smart: uses `countDocuments()` server-side                |
+| `stat`          | Metadata (doc count, indexes, size in extra dict)         |
+| `find`          | List databases/collections with `-name`, `-maxdepth`      |
+| `tree`          | Directory tree view                                       |

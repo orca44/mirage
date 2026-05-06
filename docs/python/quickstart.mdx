@@ -1,0 +1,89 @@
+---
+title: Python Quickstart
+icon: /images/python-logo.svg
+description: Create a Mirage Python workspace, mount RAM as a virtual filesystem, and run shell commands that read, write, search, and transform files.
+keywords: ["Mirage Python quickstart", "mirage-ai", "virtual filesystem", "AI agents", "shell commands"]
+---
+
+## Installation
+
+Install Mirage:
+
+```bash
+uv add mirage-ai
+```
+
+If you are not using uv:
+
+```bash
+pip install mirage-ai
+```
+
+For resources with extra dependencies, install the matching extra:
+
+```bash
+uv add "mirage-ai[s3]"
+```
+
+## Create a Workspace
+
+Start with the RAM resource so you can try Mirage without credentials.
+
+```python
+import asyncio
+
+from mirage import MountMode, Workspace
+from mirage.resource.ram import RAMResource
+
+
+async def main() -> None:
+    ws = Workspace({"/data": RAMResource()}, mode=MountMode.WRITE)
+
+    await ws.execute('echo "hello mirage" | tee /data/hello.txt')
+    result = await ws.execute("cat /data/hello.txt")
+    print(await result.stdout_str())
+
+    await ws.close()
+
+
+asyncio.run(main())
+```
+
+## Run Commands
+
+Once a resource is mounted, you can use Mirage like a shell over your
+virtual filesystem:
+
+```python
+import asyncio
+
+from mirage import MountMode, Workspace
+from mirage.resource.ram import RAMResource
+
+
+async def main() -> None:
+    ws = Workspace({"/data": RAMResource()}, mode=MountMode.WRITE)
+
+    await ws.execute('echo \'{"name": "alice"}\' | tee /data/user.json')
+
+    result = await ws.execute("ls /data/")
+    print(await result.stdout_str())
+
+    result = await ws.execute("cat /data/hello.txt")
+    print(await result.stdout_str())
+
+    result = await ws.execute('jq ".name" /data/user.json')
+    print(await result.stdout_str())
+
+    result = await ws.execute("grep hello /data/hello.txt")
+    print(await result.stdout_str())
+
+    await ws.close()
+
+
+asyncio.run(main())
+```
+
+## Next Steps
+
+- See [Resource Docs](/python/resource/index) for the full list of supported data sources

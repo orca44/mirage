@@ -1,0 +1,43 @@
+---
+title: Redis
+icon: database
+description: Mount Redis keys as a Mirage filesystem (Node only).
+---
+
+`RedisResource` exposes Redis keys as files under a single mount. The base of every key is the configured `keyPrefix`.
+
+<Note>
+  Node only. Requires the `redis@^5` peer dependency. The browser SDK doesn't ship a Redis client.
+</Note>
+
+## Install
+
+```bash
+pnpm add @struktoai/mirage-node redis
+```
+
+## Config
+
+```ts
+import { MountMode, RedisResource, Workspace } from '@struktoai/mirage-node'
+
+const redis = new RedisResource({
+  url: process.env.REDIS_URL ?? 'redis://localhost:6379',
+  keyPrefix: 'mirage/',
+})
+
+const ws = new Workspace({ '/r': redis }, { mode: MountMode.WRITE })
+await ws.execute('echo "hello" | tee /r/greet')
+await ws.execute('cat /r/greet')
+```
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `url` | `redis://localhost:6379` | Standard Redis connection URL. Redacted in snapshots. |
+| `keyPrefix` | `''` | Prefix prepended to every key. Useful for multi-tenant Redis instances. |
+
+## Mount mode
+
+`read`, `write`, `exec`.
+
+For the broader Redis semantics (binary keys, key patterns, snapshot caveats) see the [Python Redis docs](/python/resource/redis).

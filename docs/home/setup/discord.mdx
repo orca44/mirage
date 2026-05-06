@@ -1,0 +1,35 @@
+---
+title: Discord
+icon: discord
+description: Set up a Discord Bot Token for the Discord resource.
+---
+
+## Credentials
+
+### 1. Create a Discord Application
+
+1. Go to https://discord.com/developers/applications
+1. **New Application** -> name it (e.g., "Mirage")
+
+### 2. Create a Bot
+
+1. **Bot** in the left sidebar
+1. **Reset Token** -> copy the **Bot Token**
+1. Under **Privileged Gateway Intents**, enable:
+   - **Message Content Intent** (required to read message content)
+
+### 3. Invite the Bot to Your Server
+
+1. **OAuth2** -> **URL Generator** in the left sidebar
+1. Select scopes: `bot`
+1. Select bot permissions: `Read Messages/View Channels`, `Read Message History`
+1. Copy the generated URL and open it in a browser to invite
+
+### 4. Set Environment Variables
+
+```bash
+# .env.development
+DISCORD_BOT_TOKEN=MTIx...
+```
+
+For Python configuration, see the [Python Discord Setup](/python/setup/discord) guide.

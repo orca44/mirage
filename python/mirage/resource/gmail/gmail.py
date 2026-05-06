@@ -1,0 +1,65 @@
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
+from mirage.accessor.gmail import GmailAccessor
+from mirage.core.gmail.glob import resolve_glob as _resolve_glob
+from mirage.core.google._client import TokenManager
+from mirage.resource.base import BaseResource
+from mirage.resource.gmail.config import GmailConfig
+from mirage.resource.gmail.prompt import PROMPT, WRITE_PROMPT
+from mirage.types import ResourceName
+
+
+class GmailResource(BaseResource):
+
+    name: str = ResourceName.GMAIL
+    is_remote: bool = True
+    PROMPT: str = PROMPT
+    WRITE_PROMPT: str = WRITE_PROMPT
+
+    def __init__(self, config: GmailConfig) -> None:
+        super().__init__()
+        self.config = config
+        self._token_manager = TokenManager(config)
+        self.accessor = GmailAccessor(self.config, self._token_manager)
+        from mirage.commands.builtin.gmail import COMMANDS
+        from mirage.ops.gmail import OPS as GMAIL_VFS_OPS
+
+        for fn in COMMANDS:
+            self.register(fn)
+        for fn in GMAIL_VFS_OPS:
+            self.register_op(fn)
+
+    async def resolve_glob(self, paths, prefix: str = ""):
+        return await _resolve_glob(self.accessor, paths, index=self._index)
+
+    async def fingerprint(self, path: str) -> str | None:
+        lookup = await self._index.get(path)
+        return lookup.entry.remote_time if lookup.entry else None
+
+    def get_state(self) -> dict:
+        redacted = ['client_secret', 'refresh_token']
+        cfg = self.config.model_dump()
+        for f in redacted:
+            if cfg.get(f) is not None:
+                cfg[f] = "<REDACTED>"
+        return {
+            "type": self.name,
+            "needs_override": True,
+            "redacted_fields": redacted,
+            "config": cfg,
+        }
+
+    def load_state(self, state: dict) -> None:
+        pass

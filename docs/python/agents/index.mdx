@@ -1,0 +1,39 @@
+---
+title: Agents
+description: Drop a Mirage workspace into the Python agent framework you already use.
+icon: robot
+---
+
+Each integration ships behind an optional extra. Install only what you use.
+
+```bash
+uv add 'mirage-ai[openai]'        # openai-agents
+uv add 'mirage-ai[deepagents]'    # LangChain deepagents
+uv add 'mirage-ai[openhands]'     # OpenHands SDK
+uv add 'mirage-ai[pydantic-ai]'   # pydantic-ai
+uv add 'mirage-ai[camel]'         # CAMEL-AI
+```
+
+<CardGroup cols={2}>
+  <Card title="OpenAI Agents" icon="/images/openai-logo.svg" href="/python/agents/openai-agents">
+    For the openai-agents SDK.
+  </Card>
+  <Card title="LangChain · deepagents" icon="/images/langchain-logo.svg" href="/python/agents/langchain">
+    For deepagents and LangGraph-style agents.
+  </Card>
+  <Card title="OpenHands" icon="/images/openhands-logo.svg" href="/python/agents/openhands">
+    For the OpenHands agent SDK.
+  </Card>
+  <Card title="pydantic-ai" icon="/images/pydantic-logo.svg" href="/python/agents/pydantic-ai">
+    For pydantic-ai and pydantic-deepagents.
+  </Card>
+  <Card title="CAMEL-AI" icon="/images/camel-logo.svg" href="/python/agents/camel">
+    For CAMEL-AI's `ChatAgent`.
+  </Card>
+  <Card title="Claude Code" icon="/images/claude-logo.svg" href="/python/agents/claude-code">
+    Mount a workspace via FUSE and run `claude` against it.
+  </Card>
+  <Card title="Codex" icon="/images/openai-logo.svg" href="/python/agents/codex">
+    Same pattern as Claude Code: mount, then `codex`.
+  </Card>
+</CardGroup>

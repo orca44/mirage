@@ -1,0 +1,95 @@
+---
+title: Internals
+description: Call stack, ByteSource streaming, barriers, and deferred exit codes.
+icon: microchip
+---
+
+## Call Stack
+
+Shell functions receive arguments and can declare local variables. Each
+function call needs its own `$1`, `$2`, and `local` variables. Mirage uses
+a call stack - a stack of frames where each frame holds the local state
+for one function invocation.
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph LR
+    A["greet Alice"] --> B["push Frame 1"] --> C["shout Alice"] --> D["push Frame 2"] --> E["pop Frame 2"] --> F["pop Frame 1"]
+```
+
+Each frame holds:
+
+- **positional** - the `$1`, `$2`, etc. for that function call
+- **locals** - variables declared with `local`
+- **function_name** - for debugging
+- **loop_level** - tracks loop nesting, reset on function entry
+
+The call stack is created fresh at the start of each `ws.execute()` call
+and discarded when execution finishes.
+
+### Variable Resolution Order
+
+1. `call_stack.get_local(name)` - local variables take priority
+2. `env.get(name)` - environment variables
+3. For `$1`, `$@`, `$#` - read from `call_stack.current.positional`
+
+### Builtins That Use the Call Stack
+
+| Builtin   | Effect                                              |
+| --------- | --------------------------------------------------- |
+| `shift`   | Remove first N positional params from current frame |
+| `set --`  | Replace positional params in current frame          |
+| `local`   | Set variable on current frame                       |
+| `source`  | Pass same call stack (caller's scope)               |
+| `eval`    | Pass same call stack (caller's scope)               |
+
+## ByteSource
+
+Every command produces and consumes `ByteSource`:
+
+```python
+ByteSource = bytes | AsyncIterator[bytes]
+```
+
+Data is either materialized (`bytes`) or lazy (`AsyncIterator[bytes]`).
+
+### Pull-Based Pipes
+
+In Unix, `cat huge_file | head -n 1` eagerly reads the entire file until
+SIGPIPE kills the producer. In mirage, `head` pulls chunks from `cat` on
+demand - when `head` stops pulling, `cat` is never resumed. Zero wasted
+network I/O.
+
+| Aspect          | Unix (bash)                    | Mirage                            |
+| --------------- | ------------------------------ | --------------------------------- |
+| Data flow       | Push (producer writes eagerly) | Pull (consumer requests on demand)|
+| Early stop      | SIGPIPE kills producer         | Producer never resumed            |
+| Wasted I/O      | Producer may read ahead        | Only requested bytes flow         |
+
+### Barriers
+
+Pipes stream lazily, but shell operators (`&&`, `||`, `;`) need to inspect
+results before deciding what to run next. Barriers force lazy streams to
+materialize at these synchronization points.
+
+```python
+class BarrierPolicy(Enum):
+    STREAM = "stream"   # no barrier - keep lazy
+    STATUS = "status"   # drain stream, sync exit code
+    VALUE  = "value"    # drain and materialize bytes
+```
+
+| Operator         | Barrier       | Why                                    |
+| ---------------- | ------------- | -------------------------------------- |
+| `cmd1 && cmd2`   | VALUE on left | Need exit code before running right    |
+| `cmd1 \|\| cmd2` | VALUE on left | Need exit code to decide               |
+| `cmd1 ; cmd2`    | VALUE on left | Left must complete first               |
+| `cmd1 \| cmd2`   | STREAM        | Stages stay lazy                       |
+
+### Deferred Exit Codes
+
+Some commands determine exit codes from output. `grep` returns exit 1
+when no lines match - but with lazy streaming, it doesn't know until
+the consumer has pulled all data. `exit_on_empty(stream, io)` wraps
+the stream and sets `io.exit_code = 1` when it ends empty. The barrier
+at the operator boundary triggers consumption.

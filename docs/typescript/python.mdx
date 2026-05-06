@@ -1,0 +1,210 @@
+---
+title: Python
+icon: python
+description: Run python3 code inside Mirage via Pyodide. Supports -c, script files, and stdin-piped code, in Node and the browser.
+---
+
+Mirage TypeScript implements `python3` as a shell builtin, backed by [Pyodide](https://pyodide.org/) (CPython compiled to WebAssembly). Behavior matches Python Mirage's reference, with a few WASM-runtime divergences noted below. The same code path runs in Node and in the browser.
+
+## What works
+
+<Tabs>
+  <Tab title="-c inline code">
+    ```ts
+    const r = await ws.execute(`python3 -c "print(sum(range(1, 11)))"`)
+    r.stdout          // "55\n"
+    r.exitCode        // 0
+    ```
+  </Tab>
+  <Tab title="Script file from any mount">
+    ```ts
+    // Script can live on any Mirage mount (RAM, disk, S3, Redis, ...).
+    await ws.execute(`cat > /ram/hello.py <<'PYEOF'
+    import sys
+    print(f"args: {sys.argv[1:]}")
+    PYEOF`)
+    const r = await ws.execute('python3 /ram/hello.py alice bob')
+    r.stdout          // "args: ['alice', 'bob']\n"
+    ```
+  </Tab>
+  <Tab title="Piped stdin code">
+    ```ts
+    const r = await ws.execute(`echo 'print(1+1)' | python3`)
+    r.stdout          // "2\n"
+
+    // Heredocs (quoted, unquoted, dash-stripped) all work:
+    await ws.execute(`python3 << 'PYEOF'
+    for i in range(3):
+        print(f"item-{i}")
+    PYEOF`)
+    ```
+  </Tab>
+</Tabs>
+
+Also: `export FOO=bar` is visible via `os.environ`, `sys.argv[1:]` reflects shell args, `sys.exit(n)` is honored, uncaught exceptions return `exit 1` with traceback on stderr, missing script returns `exit 1` with `python3: <path>: No such file`.
+
+## Setup
+
+Pyodide is an optional peer dependency of `@struktoai/mirage-core`. Workspaces that never call `python3` never load it.
+
+<CodeGroup>
+```bash Node
+pnpm add @struktoai/mirage-node pyodide
+```
+```bash Browser
+pnpm add @struktoai/mirage-browser pyodide
+```
+</CodeGroup>
+
+`npm install` and `yarn add` work too.
+
+If `pyodide` isn't installed, `python3` returns `exit=127` with a helpful stderr message, and the workspace keeps running.
+
+## Limitations
+
+Pyodide runs CPython in WebAssembly on the same JS thread. That creates these divergences from Python Mirage's subprocess model:
+
+### 1. Shared module cache (`sys.modules`)
+
+A single Pyodide interpreter serves all `python3` calls in one workspace, so imports persist across calls.
+
+```ts
+await ws.execute(`python3 -c "import json"`)
+const r = await ws.execute(`python3 -c "import sys; print('json' in sys.modules)"`)
+r.stdout // "True", Python Mirage would print "False"
+```
+
+This is a perf win (`import numpy` is paid once) with no correctness impact, since Python imports are idempotent. User-level globals (`foo = 1` at top level) **do not** leak; each call gets a fresh `globals()`.
+
+### 2. No true CPU parallelism within a workspace
+
+Pyodide is single-interpreter-per-JS-thread, so concurrent `python3` calls in one workspace serialize via a JS queue.
+
+```ts
+// Runs in ~2s total, not ~1s:
+await Promise.all([
+  ws.execute(`python3 -c "import time; time.sleep(1)"`),
+  ws.execute(`python3 -c "import time; time.sleep(1)"`),
+])
+```
+
+For parallelism, use separate workspaces. Envs and `sys.modules` are fully isolated across workspaces.
+
+### 3. No real OS file descriptors
+
+`sys.stdin`, `sys.stdout`, `sys.stderr` are Python-level wrappers over in-memory buffers. Byte-level IO works:
+
+```ts
+// works
+await ws.execute(`python3 -c "import sys; sys.stdout.buffer.write(sys.stdin.buffer.read())"`)
+
+// needs a real fd
+await ws.execute(`python3 -c "import select; select.select([0], [], [])"`)
+```
+
+Anything through `sys.stdin.read()`, `input()`, `print()`, `.buffer.read/write()` works. `select`, `poll`, `fcntl`, and `os.read(fd, ...)` on fd 0/1/2 don't apply in WASM.
+
+## Reading and writing Mirage mounts from Python
+
+Python code under `python3` can `open()` paths inside any Mirage-mounted prefix. Reads and writes route through the workspace's mount layer (RAM, S3, OPFS, Slack, anything you've registered).
+
+```ts
+import { MountMode, RAMResource } from '@struktoai/mirage-core'
+
+const ram = new RAMResource()
+ws.addMount('/ram', ram, MountMode.WRITE)
+
+await ws.fs.writeFile('/ram/in.txt', 'hello')
+const r = await ws.execute(`python3 -c 'print(open("/ram/in.txt").read())'`)
+r.stdoutText // "hello\n"
+
+// Writes flush back through the bridge:
+await ws.execute(`python3 -c 'open("/ram/out.txt","w").write("from python")'`)
+await ws.fs.readFileText('/ram/out.txt') // "from python"
+```
+
+PIL and other native-extension libs that go through Python's `open()` work too:
+
+```ts
+await ws.execute(`python3 -c '
+from PIL import Image
+img = Image.new("RGB", (4, 4), color="red")
+img.save("/ram/icon.png")
+'`)
+const png = await ws.fs.readFile('/ram/icon.png')
+// PNG bytes, ws.fs sees what Python wrote
+```
+
+### How it works
+
+- **Eager preload**: `addMount(prefix, ...)` walks the resource and populates Pyodide's MEMFS at `prefix`. Subsequent reads from Python are sync and fast.
+- **Flush on close**: when Python `close()`s a file under a mounted prefix, the bytes are flushed back through the workspace bridge.
+- **Python `open()` and friends**: `open()`, `pathlib.Path.write_text()`, `numpy.save`, `PIL.Image.save`, `pandas.to_csv`. Anything that ultimately calls Python-level `open()` works.
+- **C extensions calling `fopen` directly**: see only the preloaded MEMFS snapshot (sqlite3, h5py). Most data-science libs use Python `open` and just work; native FFI database drivers don't.
+
+### Runtime requirements
+
+The shim uses [JSPI](https://github.com/WebAssembly/js-promise-integration) (JavaScript Promise Integration) so sync Python calls can drive async JS bridge ops.
+
+- **Browser**: Chrome 137+ (May 2025); Firefox behind `javascript.options.wasm_js_promise_integration`.
+- **Node**: 24+ with `--experimental-wasm-jspi` (the vitest config in this repo sets it).
+- **No JSPI**: reads of preloaded files still work, but `close()` on a write under a mounted prefix throws `RuntimeError: Cannot stack switch`.
+
+### What doesn't work with the shim
+
+- C extensions calling `fopen` directly (sqlite3, h5py): they only see the preloaded MEMFS state. Don't read or modify mount-backed databases through these.
+- Stale listings: changes made to the underlying resource from outside this workspace aren't picked up until the next `addMount` cycle.
+- Concurrent writers: last-flush wins; no conflict detection.
+
+## What you cannot do
+
+### `pip install` at runtime
+
+Pre-bundle what you need. Pyodide's [`micropip`](https://pyodide.org/en/stable/usage/loading-packages.html) isn't wired into the `python3` builtin yet.
+
+### Native CPython fallback
+
+Mirage TS always uses Pyodide, never `child_process.spawn('python3', ...)`, so behavior is identical in Node and in the browser.
+
+## Shell parser quirk (not python3-specific)
+
+The tree-sitter-bash grammar strips newlines inside `"..."`. For multi-line `-c`, use single quotes or a heredoc:
+
+```ts
+// Newlines collapse, SyntaxError
+await ws.execute(`python3 -c "x = 2
+print(x * 3)"`)
+
+// Single quotes preserve newlines
+await ws.execute(`python3 -c 'x = 2
+print(x * 3)'`)
+
+// Heredocs read more naturally
+await ws.execute(`python3 << 'PYEOF'
+x = 2
+print(x * 3)
+PYEOF`)
+```
+
+## Quick reference
+
+| Feature | Status |
+|---|---|
+| `python3 -c "..."` | matches Python Mirage |
+| `python3 -c` multi-line | use single quotes or heredoc |
+| `python3 /path/script.py` (any mount) | matches Python Mirage |
+| `echo code \| python3` | matches Python Mirage |
+| `python3 << EOF ... EOF` (all variants) | matches Python Mirage |
+| `os.environ` reads `session.env` | matches Python Mirage |
+| `sys.argv[1:]` reflects shell args | matches Python Mirage |
+| `sys.exit(n)` | matches Python Mirage |
+| `os.getcwd()` reflects `session.cwd` | matches Python Mirage |
+| Cross-workspace env isolation | own Pyodide per workspace |
+| Cross-call env isolation | snapshot/restore per call |
+| `sys.modules` fresh per call | shared within workspace |
+| True CPU parallelism within one workspace | serialized; use separate workspaces |
+| `select()` / `poll()` / `fcntl()` on stdin | no real fds in WASM |
+| `open('/<mount>/...')` inside Python | via FS shim, eager preload + flush on close |
+| `pip install` at runtime | pre-bundle instead |
+| Native CPython fallback | always Pyodide |
+| Browser support | Chrome 137+, Node 24+ with JSPI |

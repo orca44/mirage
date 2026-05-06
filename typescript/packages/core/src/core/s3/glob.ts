@@ -1,0 +1,49 @@
+// ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+// ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
+import type { IndexCacheStore } from '../../cache/index/store.ts'
+import { PathSpec } from '../../types.ts'
+import type { S3Accessor } from '../../accessor/s3.ts'
+import { fnmatch } from './_client.ts'
+import { SCOPE_ERROR } from './constants.ts'
+import { readdir } from './readdir.ts'
+
+export async function resolveGlob(
+  accessor: S3Accessor,
+  paths: readonly PathSpec[],
+  index?: IndexCacheStore,
+): Promise<PathSpec[]> {
+  const result: PathSpec[] = []
+  for (const p of paths) {
+    if (p.resolved) {
+      result.push(p)
+      continue
+    }
+    if (p.pattern !== null && p.pattern !== '') {
+      const dirSpec = p.dir
+      const entries = await readdir(accessor, dirSpec, index)
+      const matched: PathSpec[] = []
+      for (const entry of entries) {
+        const entryBase = entry.split('/').pop() ?? ''
+        if (!fnmatch(entryBase, p.pattern)) continue
+        matched.push(PathSpec.fromStrPath(entry, p.prefix))
+      }
+      const truncated = matched.length > SCOPE_ERROR ? matched.slice(0, SCOPE_ERROR) : matched
+      result.push(...truncated)
+    } else {
+      result.push(p)
+    }
+  }
+  return result
+}

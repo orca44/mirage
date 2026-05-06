@@ -1,0 +1,32 @@
+---
+title: Langfuse
+icon: chart-line
+description: Set up Langfuse API keys for the Langfuse resource.
+---
+
+## Credentials
+
+### 1. Get API Keys
+
+#### Langfuse Cloud
+
+1. Go to https://cloud.langfuse.com
+1. Select your project -> **Settings** -> **API Keys**
+1. Copy the **Public Key** and **Secret Key**
+
+#### Self-hosted
+
+1. Go to your Langfuse instance (e.g., `https://langfuse.yourcompany.com`)
+1. Select your project -> **Settings** -> **API Keys**
+1. Copy the **Public Key** and **Secret Key**
+
+### 2. Set Environment Variables
+
+```bash
+# .env.development
+LANGFUSE_PUBLIC_KEY=pk-lf-...
+LANGFUSE_SECRET_KEY=sk-lf-...
+LANGFUSE_HOST=https://cloud.langfuse.com
+```
+
+For Python configuration, see the [Python Langfuse Setup](/python/setup/langfuse) guide.

@@ -1,0 +1,73 @@
+// ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+// ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
+import { normalizeFields } from '@struktoai/mirage-core'
+import type { S3Config } from '../s3/config.ts'
+
+export const GCS_ENDPOINT = 'https://storage.googleapis.com'
+
+export interface GCSConfig {
+  bucket: string
+  accessKeyId: string
+  secretAccessKey: string
+  endpoint?: string
+  region?: string
+  timeoutMs?: number
+}
+
+export interface GCSConfigRedacted {
+  bucket: string
+  accessKeyId: string
+  secretAccessKey: string
+  endpoint: string
+  region: string
+  timeoutMs?: number
+}
+
+export function gcsToS3Config(config: GCSConfig): S3Config {
+  return {
+    bucket: config.bucket,
+    region: config.region ?? 'auto',
+    endpoint: config.endpoint ?? GCS_ENDPOINT,
+    accessKeyId: config.accessKeyId,
+    secretAccessKey: config.secretAccessKey,
+    ...(config.timeoutMs !== undefined ? { timeoutMs: config.timeoutMs } : {}),
+  }
+}
+
+export function redactGcsConfig(config: GCSConfig): GCSConfigRedacted {
+  return {
+    bucket: config.bucket,
+    accessKeyId: '<REDACTED>',
+    secretAccessKey: '<REDACTED>',
+    endpoint: config.endpoint ?? GCS_ENDPOINT,
+    region: config.region ?? 'auto',
+    ...(config.timeoutMs !== undefined ? { timeoutMs: config.timeoutMs } : {}),
+  }
+}
+
+export function normalizeGcsConfig(input: Record<string, unknown>): GCSConfig {
+  return normalizeFields(input, {
+    rename: {
+      access_key_id: 'accessKeyId',
+      secret_access_key: 'secretAccessKey',
+      endpoint_url: 'endpoint',
+      timeout: 'timeoutMs',
+    },
+    transform: {
+      timeout: (v: unknown) => (typeof v === 'number' ? v * 1000 : v),
+    },
+    drop: ['proxy'],
+  }) as unknown as GCSConfig
+}

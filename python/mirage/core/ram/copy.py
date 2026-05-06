@@ -1,0 +1,39 @@
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
+from datetime import datetime, timezone
+
+from mirage.accessor.ram import RAMAccessor
+from mirage.types import PathSpec
+
+
+def _norm(path: str) -> str:
+    return "/" + path.strip("/")
+
+
+async def copy(accessor: RAMAccessor, src: PathSpec, dst: PathSpec) -> None:
+    if isinstance(src, str):
+        src = PathSpec(original=src, directory=src)
+    if isinstance(src, PathSpec):
+        src = src.strip_prefix
+    if isinstance(dst, str):
+        dst = PathSpec(original=dst, directory=dst)
+    if isinstance(dst, PathSpec):
+        dst = dst.strip_prefix
+    store = accessor.store
+    s, d = _norm(src), _norm(dst)
+    if s not in store.files:
+        raise FileNotFoundError(s)
+    store.files[d] = store.files[s]
+    store.modified[d] = datetime.now(timezone.utc).isoformat()

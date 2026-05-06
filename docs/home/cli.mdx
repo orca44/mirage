@@ -1,0 +1,271 @@
+---
+title: CLI
+description: Drive Mirage from the shell. Spin up a workspace from YAML, run commands against your mounts, snapshot and restore.
+icon: terminal
+---
+
+The `mirage` CLI is a thin httpx wrapper over the Mirage daemon. It
+auto-spawns the daemon on first `workspace create`, and the daemon
+auto-exits 30 seconds after the last workspace is deleted. Most users
+never type a daemon command directly.
+
+Output is structured JSON to stdout for every verb -- pipe to `jq`,
+save to file, or read it directly.
+
+## Install
+
+```bash
+curl -fsSL https://strukto.ai/install.sh | sh
+```
+
+Or via your package manager of choice:
+
+```bash
+brew install mirage
+```
+
+```bash
+uv add mirage-ai
+```
+
+```bash
+pip install mirage-ai
+```
+
+```bash
+uvx mirage-ai
+```
+
+```bash
+npx mirage
+```
+
+Verify:
+
+```bash
+mirage --help
+```
+
+## Define a workspace in YAML
+
+A workspace is a set of prefixed mounts plus some workspace-level
+settings. Save this as `workspace.yaml`:
+
+```yaml
+mode: WRITE
+
+mounts:
+  /:
+    resource: ram
+    mode: WRITE
+  /s3:
+    resource: s3
+    mode: READ
+    config:
+      bucket: ${AWS_S3_BUCKET}
+      region: ${AWS_DEFAULT_REGION}
+      aws_access_key_id: ${AWS_ACCESS_KEY_ID}
+      aws_secret_access_key: ${AWS_SECRET_ACCESS_KEY}
+```
+
+`${VAR}` placeholders are interpolated from your shell environment at
+`mirage workspace create` time. Missing vars fail fast with the full
+list, not lazily on first use.
+
+## Walkthrough
+
+A guided tour from creating a workspace to snapshotting it. Each
+step builds on the previous one; you can copy them in order.
+
+For a runnable end-to-end version against a real multi-mount workspace
+(`/s3`, `/gdrive`, `/gmail`, `/slack`, `/discord`), see
+<a href="https://github.com/strukto-ai/mirage/blob/main/examples/python/cross/README.md" target="_blank" rel="noopener noreferrer"><code>examples/python/cross/README.md</code></a>.
+
+### 1. Source env and create a workspace
+
+The YAML's `${...}` placeholders resolve from your shell at create
+time, so source your env first. The daemon auto-spawns on the first
+`create`.
+
+```bash
+set -a && source .env.development && set +a
+
+mirage workspace create workspace.yaml --id demo
+```
+
+### 2. Inspect
+
+`list` is one line per workspace; `get` returns the full mount and
+session detail.
+
+```bash
+mirage workspace list
+mirage workspace get demo
+```
+
+### 3. Run commands against your mounts
+
+`execute` runs a shell command inside the workspace. Paths resolve
+through the mount registry (`/s3/...` hits S3, `/` hits the RAM
+backing, etc.).
+
+```bash
+mirage execute --workspace_id demo --command "ls /s3/"
+mirage execute --workspace_id demo --command "head -n 1 /s3/data/example.jsonl"
+```
+
+### 4. Pipe stdin
+
+When stdout isn't a TTY, the CLI forwards stdin to the command
+automatically.
+
+```bash
+echo -e "a\nb\nc" | mirage execute --workspace_id demo --command "wc -l"
+```
+
+### 5. Dry-run with `provision`
+
+`provision` returns a `ProvisionResult` (network bytes, cache hits,
+estimated cost) without running the command -- handy for predicting
+spend before kicking off an expensive read.
+
+```bash
+mirage provision --workspace_id demo \
+  --command "cat /s3/data/example.jsonl | wc -l"
+```
+
+### 6. Cache: network → hit after a real read
+
+After a real `cat`, `provision` flips that path from a network read
+to a cache hit (`cache_hits=1`).
+
+```bash
+mirage execute  --workspace_id demo --command "cat /s3/data/example.jsonl > /dev/null"
+mirage provision --workspace_id demo --command "cat /s3/data/example.jsonl"
+```
+
+### 7. Session traces
+
+Every session writes a JSONL trace under `/.sessions/<utc-yyyy-mm-dd>/`.
+
+```bash
+mirage execute --workspace_id demo --command "ls /.sessions/"
+DAY=$(date -u +%Y-%m-%d)
+mirage execute --workspace_id demo --command "head -n 1 /.sessions/$DAY/*.jsonl" \
+  | jq -r .stdout | jq
+```
+
+### 8. Background jobs
+
+Long-running commands take `--background` and return a `job_id`
+immediately. `mirage job wait` blocks until it's done.
+
+```bash
+JOB=$(mirage execute --workspace_id demo --background \
+  --command "wc -l /s3/data/example.jsonl" \
+  | jq -r .job_id)
+mirage job wait $JOB
+```
+
+### 9. Snapshot to disk
+
+```bash
+mirage workspace snapshot demo /tmp/demo.tar
+```
+
+### 10. Restore from snapshot
+
+Snapshots redact cloud creds at save time, so loading needs fresh
+creds via `--override`. The same workspace YAML is a valid override.
+
+```bash
+mirage workspace load /tmp/demo.tar \
+  --id demo_loaded \
+  --override workspace.yaml
+
+mirage workspace get demo_loaded --verbose
+mirage execute --workspace_id demo_loaded \
+  --command "head -n 1 /s3/data/example.jsonl"
+```
+
+<Note>
+  `--override` is required for any mount whose resource declares
+  `needs_override=True` (S3, GDrive, Slack, Discord, Redis, ...).
+  The snapshot stores `"<REDACTED>"` in place of secrets at save
+  time. Loading without `--override` 400s with the list of prefixes
+  that need fresh creds. Local resources (RAM, Disk) restore as-is
+  with no override needed.
+</Note>
+
+### 11. Clean up
+
+The daemon exits ~30s after the last workspace is deleted.
+
+```bash
+mirage workspace delete demo
+mirage workspace delete demo_loaded
+```
+
+## Verbs at a glance
+
+| Verb | What it does |
+| --- | --- |
+| `mirage workspace create FILE [--id NAME]` | Build resources from YAML, register a workspace, return its id. |
+| `mirage workspace list` | Brief one-line summary per active workspace. |
+| `mirage workspace get ID [--verbose]` | Full detail (mounts, sessions, optionally cache / dirty / history internals). |
+| `mirage workspace delete ID` | Stop the workspace; daemon may exit on the idle timer. |
+| `mirage workspace clone ID [--id NAME] [--override FILE]` | Fresh local backings, shared remote resources; partial-config override swaps creds or buckets. |
+| `mirage workspace snapshot ID PATH.tar` | Snapshot to a tar file. |
+| `mirage workspace load PATH.tar [--id NAME] [--override FILE]` | Restore from tar; override re-supplies redacted creds. |
+| `mirage session create WS [--id NAME]` | Add a named session (own cwd + env). |
+| `mirage session list WS` | List sessions for a workspace. |
+| `mirage session delete WS SESSION` | Close a session. |
+| `mirage execute --workspace_id WS [--session_id S] [--background] --command "..."` | Run a command. Pipes stdin automatically when stdout is not a TTY. |
+| `mirage provision --workspace_id WS [--session_id S] --command "..."` | Dry-run / cost estimate -- returns a `ProvisionResult` shape (network bytes, cache hits, estimated cost) without running the command. |
+| `mirage job list [--workspace_id WS]` | List jobs the daemon has run, plus their status. |
+| `mirage job get JOB` | Detail for one job. |
+| `mirage job wait JOB [--timeout SECS]` | Block until the job is done; returns the result. |
+| `mirage job cancel JOB` | Cancel a running job. |
+
+## Daemon control
+
+Most users never run these directly -- the daemon auto-spawns on
+first `workspace create` and auto-exits after the idle timer fires
+(default 30s after the last workspace is deleted). When you need to
+intervene -- typically during development, when you want code changes
+to take effect:
+
+```bash
+mirage daemon status              # health, PID, uptime, workspace count
+mirage daemon stop                # graceful: trip exit event, falls back to SIGTERM after --timeout (default 5s)
+mirage daemon restart             # stop + lazy respawn (add --eager to spawn now)
+mirage daemon kill                # SIGKILL via PID file -- last resort
+```
+
+| Verb | What it does |
+| --- | --- |
+| `mirage daemon status` | Daemon health, PID, uptime, workspace count. Exit 1 if daemon not reachable. |
+| `mirage daemon stop` | `POST /v1/shutdown` to trip the daemon's exit event. Daemon snapshots active workspaces (if `persist_dir` set), closes them, exits. Falls back to SIGTERM on `--timeout`. |
+| `mirage daemon restart` | Stop, then either wait for next `workspace create` to auto-spawn (default) or `--eager` to spawn immediately. Workspaces are LOST unless `persist_dir` is configured. |
+| `mirage daemon kill` | SIGKILL via PID file at `~/.mirage/daemon.pid`. Skips graceful shutdown -- use only when `stop` hangs. |
+
+<Note>
+  When you change Mirage's source code (commands, providers, etc.),
+  the running daemon won't see your changes -- it loaded the old code
+  at startup. Run `mirage daemon restart` to pick up new code.
+  Same situation as `dockerd` after recompiling Docker.
+</Note>
+
+## Where the daemon lives
+
+Most users never need to think about the daemon. If you do:
+
+- It listens on `http://127.0.0.1:8765` by default.
+- Override via `MIRAGE_DAEMON_URL` env var or `~/.mirage/config.toml`:
+  ```toml
+  [daemon]
+  url                = "http://127.0.0.1:8765"
+  idle_grace_seconds = 30
+  ```
+- Logs go to `~/.mirage/daemon.log` when the CLI auto-spawns it.
+- It exits 30 seconds after the workspace count hits zero (configurable).

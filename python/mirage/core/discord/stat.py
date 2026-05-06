@@ -1,0 +1,116 @@
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
+from mirage.accessor.discord import DiscordAccessor
+from mirage.cache.index import IndexCacheStore
+from mirage.core.discord.readdir import readdir as _readdir
+from mirage.types import FileStat, FileType, PathSpec
+
+VIRTUAL_DIRS = {"", "channels", "members"}
+
+
+async def _populate_via_parent(
+    accessor: DiscordAccessor,
+    virtual_key: str,
+    prefix: str,
+    index: IndexCacheStore,
+) -> None:
+    parent_virtual = virtual_key.rsplit("/", 1)[0] or "/"
+    try:
+        await _readdir(
+            accessor,
+            PathSpec(original=parent_virtual,
+                     directory=parent_virtual,
+                     prefix=prefix),
+            index=index,
+        )
+    # best-effort cache populate; canonical ENOENT raised below
+    except Exception:
+        pass
+
+
+async def stat(
+    accessor: DiscordAccessor,
+    path: PathSpec,
+    index: IndexCacheStore = None,
+) -> FileStat:
+    if isinstance(path, str):
+        path = PathSpec(original=path, directory=path)
+    if isinstance(path, PathSpec):
+        prefix = path.prefix
+        path = path.original
+
+    if prefix and path.startswith(prefix):
+        path = path[len(prefix):] or "/"
+    key = path.strip("/")
+
+    if not key:
+        return FileStat(name="/", type=FileType.DIRECTORY)
+
+    parts = key.split("/")
+    virtual_key = prefix + "/" + key
+
+    if len(parts) == 1:
+        if index is None:
+            raise FileNotFoundError(path)
+        lookup = await index.get(virtual_key)
+        if lookup.entry is None:
+            await _populate_via_parent(accessor, virtual_key, prefix, index)
+            lookup = await index.get(virtual_key)
+            if lookup.entry is None:
+                raise FileNotFoundError(path)
+        return FileStat(
+            name=lookup.entry.vfs_name or lookup.entry.name,
+            type=FileType.DIRECTORY,
+            extra={"guild_id": lookup.entry.id},
+        )
+
+    if len(parts) == 2 and parts[1] in VIRTUAL_DIRS:
+        return FileStat(name=parts[1], type=FileType.DIRECTORY)
+
+    if len(parts) == 3 and parts[1] == "channels":
+        if index is None:
+            raise FileNotFoundError(path)
+        lookup = await index.get(virtual_key)
+        if lookup.entry is None:
+            await _populate_via_parent(accessor, virtual_key, prefix, index)
+            lookup = await index.get(virtual_key)
+            if lookup.entry is None:
+                raise FileNotFoundError(path)
+        return FileStat(
+            name=lookup.entry.vfs_name or lookup.entry.name,
+            type=FileType.DIRECTORY,
+            extra={"channel_id": lookup.entry.id},
+        )
+
+    if len(parts) == 3 and parts[1] == "members":
+        if index is None:
+            raise FileNotFoundError(path)
+        lookup = await index.get(virtual_key)
+        if lookup.entry is None:
+            await _populate_via_parent(accessor, virtual_key, prefix, index)
+            lookup = await index.get(virtual_key)
+            if lookup.entry is None:
+                raise FileNotFoundError(path)
+        return FileStat(
+            name=lookup.entry.vfs_name or lookup.entry.name,
+            type=FileType.JSON,
+            extra={"user_id": lookup.entry.id},
+        )
+
+    if (len(parts) == 4 and parts[1] == "channels"
+            and parts[3].endswith(".jsonl")):
+        return FileStat(name=parts[3], type=FileType.TEXT)
+
+    raise FileNotFoundError(path)

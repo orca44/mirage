@@ -1,0 +1,52 @@
+---
+title: SSH
+icon: server
+description: Mount a remote SSH host as a Mirage filesystem (Node only).
+---
+
+`SSHResource` opens an SFTP session and mounts the remote root as a filesystem.
+
+<Note>
+  Node only. Requires the `ssh2` peer dependency. The browser SDK doesn't ship an SSH client.
+</Note>
+
+## Install
+
+```bash
+pnpm add @struktoai/mirage-node ssh2
+```
+
+## Config
+
+```ts
+import { MountMode, SSHResource, Workspace } from '@struktoai/mirage-node'
+
+const ssh = new SSHResource({
+  host: 'jump.example.com',
+  username: 'me',
+  identityFile: '~/.ssh/id_ed25519',
+  root: '/srv/data',
+})
+
+const ws = new Workspace({ '/remote': ssh }, { mode: MountMode.READ })
+await ws.execute('ls /remote')
+```
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `host` | required | Host alias from `~/.ssh/config` or a real DNS name. |
+| `hostname` | `host` | Override if `host` is an alias and the actual DNS name differs. |
+| `port` | `22` | |
+| `username` | (from ssh-config) | |
+| `password` | none | Redacted in snapshots. Prefer `identityFile`. |
+| `identityFile` | none | Path to a private key. `~` is expanded. |
+| `passphrase` | none | Passphrase for `identityFile`. Redacted in snapshots. |
+| `root` | `/` | Path on the remote that becomes the mount root. |
+| `timeout` | `10000` | Connect timeout in ms. |
+| `knownHosts` | system | Path to a `known_hosts` file. |
+
+## Mount mode
+
+`read`, `write`. Writes flush via SFTP put.
+
+For the full set of supported shell commands and snapshot behavior see the [Python SSH docs](/python/resource/ssh).

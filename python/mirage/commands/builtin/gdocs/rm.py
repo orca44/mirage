@@ -1,0 +1,51 @@
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
+from mirage.accessor.gdocs import GDocsAccessor
+from mirage.cache.index import IndexCacheStore
+from mirage.commands.registry import command
+from mirage.commands.spec import SPECS
+from mirage.core.gdocs.glob import resolve_glob
+from mirage.core.gdocs.unlink import unlink
+from mirage.io.types import ByteSource, IOResult
+from mirage.types import PathSpec
+
+
+@command("rm", resource="gdocs", spec=SPECS["rm"], write=True)
+async def rm(
+    accessor: GDocsAccessor,
+    paths: list[PathSpec],
+    *texts: str,
+    f: bool = False,
+    v: bool = False,
+    index: IndexCacheStore = None,
+    **_extra: object,
+) -> tuple[ByteSource | None, IOResult]:
+    if not paths:
+        raise ValueError("rm: missing operand")
+    paths = await resolve_glob(accessor, paths, index)
+    verbose_parts: list[str] = []
+    removed: dict[str, bytes] = {}
+    for p in paths:
+        try:
+            await unlink(accessor, p, index)
+        except (FileNotFoundError, ValueError):
+            if f:
+                continue
+            raise
+        removed[p.strip_prefix] = b""
+        if v:
+            verbose_parts.append(f"removed '{p.original}'")
+    output = "\n".join(verbose_parts).encode() if v else None
+    return output, IOResult(writes=removed)

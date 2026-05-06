@@ -1,0 +1,41 @@
+---
+title: Semantic Scholar
+icon: book
+description: Set up a Semantic Scholar API key for the sscholar resource.
+---
+
+## Credentials
+
+The Semantic Scholar resource works without an API key for low-volume use, but you should request a key for any production workload to avoid rate limiting.
+
+### 1. Request an API Key
+
+1. Go to https://www.semanticscholar.org/product/api
+2. Click **Request an API Key** and fill in the form.
+3. Wait for the email with your key (usually a business day or two).
+
+### 2. Set Environment Variables
+
+```bash
+# .env.development
+SEMANTIC_SCHOLAR_API_KEY=your-api-key-here
+```
+
+If you skip the key, leave the env var unset; the resource falls back to the public unauthenticated endpoint.
+
+## Limits
+
+The resource exposes tunable defaults to keep an agent from blowing through your rate limit on first contact:
+
+- `defaultListLimit` (100): default page size for list operations.
+- `defaultSearchLimit` (20): default page size for search.
+- `defaultSnippetLimit` (10): default snippet count per paper.
+
+Override in the resource config:
+
+```ts
+new SSCholarResource({
+  apiKey: process.env.SEMANTIC_SCHOLAR_API_KEY,
+  defaultSearchLimit: 50,
+})
+```

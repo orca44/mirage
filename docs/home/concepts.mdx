@@ -1,0 +1,88 @@
+---
+title: Concepts
+description: Learn the core Mirage model before choosing a resource or SDK entrypoint.
+icon: cube
+---
+
+## The Mirage Mental Model
+
+Mirage turns external systems into a virtual filesystem so agents and tools can use one consistent interface instead of resource-specific APIs.
+
+## The Pieces, In One Breath
+
+- <Icon icon="eye" /> **[Eyes](/home/design/eyes)**, how agents see. Mounted resources expose external systems as paths.
+- <Icon icon="hand" /> **[Hands](/home/design/hands)**, how agents act. Read, write, search, transform, compose through byte streams.
+- <Icon icon="brain" /> **Brain** (the Agent), orchestrates. Decides which Hands to use, spends tokens reasoning, and owns what gets done.
+- <Icon icon="user" /> **[Arm](/home/design/arm)**, Mirage's reach. Extends the agent from the Brain into external systems. Expands into Workspace, Mounts, Sessions, and Shell.
+- <Icon icon="terminal" /> **[Shell](/home/design/pipeline)**, the wiring inside the Arm. Turns a sentence like `cat /s3/*.csv | grep error` into coordinated eye-and-hand movement.
+- <Icon icon="hand-point-up" /> **[Fingers](/home/design/fingers)**, the primitive gestures every backend implements: ops (`read`, `readdir`, `stat`, `write`, `mkdir`, `unlink`, `rename`) plus FUSE to expose them via POSIX. The fundamental infrastructure layer.
+- <Icon icon="hand-sparkles" /> **[Gestures](/home/design/gestures)**, named commands built on fingers. `cat`, `grep`, `cp`, `jq`, each is one coordinated motion the agent can name directly. When a gesture reaches across two resources (`cp /s3/a /gdrive/b`), it becomes a <Icon icon="handshake" /> **[Handshake](/home/design/handshakes)**, two hands meeting. (Higher-level agent *Skills*, à la [Anthropic Agent Skills](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview), compose gestures and handshakes into complex workflows at the harness layer.)
+- <Icon icon="clock-rotate-left" /> **[Recall](/home/design/recall)** (the cache), what the Hands have already produced and the tokens the Brain has already spent, so the same work never happens twice. Split into [Index Store](/home/design/index_cache) and [File Store](/home/design/file_cache).
+
+## Core Concepts
+
+### Arm
+
+The Arm is Mirage's reach, the connected limb that extends the agent from the Brain into external systems. It brings together [Eyes](/home/design/eyes), [Hands](/home/design/hands), mounts, sessions, and shell execution into one coherent reach.
+
+- Deep dive: [Workspace is Arm](/home/design/arm)
+
+### Workspace
+
+A `Workspace` is the concrete Python object and shared kernel inside the Arm. It owns the global resources that stay shared across commands and sessions: mounts, cache, command registry, jobs, and execution history.
+
+- Deep dive: [Workspace](/home/design/workspace)
+
+### Resources and Mounts
+
+A resource maps one external system into Mirage. A mount attaches that resource to a prefix such as `/data`, `/s3`, or `/github`. Resources and mounts are the substance of Mirage's **Eyes**, and they are the regions of the world the Arm can reach into.
+
+- Examples:
+  `RAMResource()` mounted at `/data`
+  `GitHubResource(...)` mounted at `/github`
+- Deep dive: [Mounts](/home/design/mount)
+- Deep dive: [Eyes](/home/design/eyes)
+
+### Sessions
+
+A `Session` holds the mutable execution context for one terminal-like thread of work: current directory, environment variables, shell functions, and last exit code. The Arm is shared. Sessions are the postures it holds for different agents over time.
+
+- Deep dive: [Sessions](/home/design/session)
+
+### PathSpec
+
+Mirage carries virtual paths through the system using `PathSpec`, which keeps track of the original path, resolved directory, prefix, and pattern information.
+
+- Deep dive: [PathSpec](/home/design/pathspec)
+
+### Command Execution
+
+Mirage parses commands, resolves virtual paths, dispatches operations to resources, and returns an `IOResult`.
+
+Mirage uses a lightweight async execution model so commands, streams, and cleanup work consistently across local and remote systems without forcing the user into resource-specific APIs. **Fingers** (ops + FUSE) are the fundamental layer every resource implements; **Gestures** are the named commands built on fingers; the Shell composes gestures into plans.
+
+- Deep dive: [Hands](/home/design/hands)
+- Deep dive: [Ops are Fingers](/home/design/fingers)
+- Deep dive: [Commands are Gestures](/home/design/gestures)
+- Deep dive: [Execution Pipeline](/home/design/pipeline)
+- Related: [Commands](/home/design/commands)
+- Related: [Command Spec](/home/design/commandspec)
+
+### Recall (Cache)
+
+Remote resources can use cache layers to avoid repeated network reads and to keep directory and file metadata responsive. Mirage calls this system **Recall**.
+
+- Deep dive: [Recall](/home/design/recall), the overall Recall model
+- Deep dive: [Index Store](/home/design/index_cache), remembers directory listings and metadata
+- Deep dive: [File Store](/home/design/file_cache), remembers file content
+
+### FUSE
+
+Mirage can also expose the virtual filesystem as a real mount point so non-Mirage tools can read from it directly.
+
+- Deep dive: [FUSE](/home/design/fuse)
+
+## Where To Go Next
+
+- Use the [Resource Matrix](/home/resource-matrix) to choose the right backend.
+- Start with the [Python Quickstart](/python/quickstart) if you want working code immediately.

@@ -1,0 +1,137 @@
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
+from typing import TYPE_CHECKING, NamedTuple
+
+from mirage.resource.loader import load_backend_class
+
+if TYPE_CHECKING:
+    from mirage.resource.base import BaseResource
+
+
+class ResourceEntry(NamedTuple):
+    resource_path: str
+    config_path: str | None
+
+
+REGISTRY: dict[str, ResourceEntry] = {
+    "ram":
+    ResourceEntry("mirage.resource.ram:RAMResource", None),
+    "disk":
+    ResourceEntry("mirage.resource.disk:DiskResource", None),
+    "redis":
+    ResourceEntry("mirage.resource.redis:RedisResource", None),
+    "s3":
+    ResourceEntry("mirage.resource.s3:S3Resource",
+                  "mirage.resource.s3:S3Config"),
+    "r2":
+    ResourceEntry("mirage.resource.r2:R2Resource",
+                  "mirage.resource.r2:R2Config"),
+    "oci":
+    ResourceEntry("mirage.resource.oci:OCIResource",
+                  "mirage.resource.oci:OCIConfig"),
+    "supabase":
+    ResourceEntry("mirage.resource.supabase:SupabaseResource",
+                  "mirage.resource.supabase:SupabaseConfig"),
+    "gcs":
+    ResourceEntry("mirage.resource.gcs:GCSResource",
+                  "mirage.resource.gcs:GCSConfig"),
+    "github":
+    ResourceEntry("mirage.resource.github:GitHubResource",
+                  "mirage.resource.github:GitHubConfig"),
+    "github_ci":
+    ResourceEntry("mirage.resource.github_ci:GitHubCIResource",
+                  "mirage.resource.github_ci:GitHubCIConfig"),
+    "linear":
+    ResourceEntry("mirage.resource.linear:LinearResource",
+                  "mirage.resource.linear:LinearConfig"),
+    "gdocs":
+    ResourceEntry("mirage.resource.gdocs:GDocsResource",
+                  "mirage.resource.gdocs:GDocsConfig"),
+    "gsheets":
+    ResourceEntry("mirage.resource.gsheets:GSheetsResource",
+                  "mirage.resource.gsheets:GSheetsConfig"),
+    "gslides":
+    ResourceEntry("mirage.resource.gslides:GSlidesResource",
+                  "mirage.resource.gslides:GSlidesConfig"),
+    "gdrive":
+    ResourceEntry("mirage.resource.gdrive:GoogleDriveResource",
+                  "mirage.resource.gdrive:GoogleDriveConfig"),
+    "slack":
+    ResourceEntry("mirage.resource.slack:SlackResource",
+                  "mirage.resource.slack:SlackConfig"),
+    "discord":
+    ResourceEntry("mirage.resource.discord:DiscordResource",
+                  "mirage.resource.discord:DiscordConfig"),
+    "gmail":
+    ResourceEntry("mirage.resource.gmail:GmailResource",
+                  "mirage.resource.gmail:GmailConfig"),
+    "trello":
+    ResourceEntry("mirage.resource.trello:TrelloResource",
+                  "mirage.resource.trello:TrelloConfig"),
+    "telegram":
+    ResourceEntry("mirage.resource.telegram:TelegramResource",
+                  "mirage.resource.telegram:TelegramConfig"),
+    "mongodb":
+    ResourceEntry("mirage.resource.mongodb:MongoDBResource",
+                  "mirage.resource.mongodb:MongoDBConfig"),
+    "postgres":
+    ResourceEntry("mirage.resource.postgres:PostgresResource",
+                  "mirage.resource.postgres:PostgresConfig"),
+    "notion":
+    ResourceEntry("mirage.resource.notion:NotionResource",
+                  "mirage.resource.notion:NotionConfig"),
+    "langfuse":
+    ResourceEntry("mirage.resource.langfuse:LangfuseResource",
+                  "mirage.resource.langfuse:LangfuseConfig"),
+    "ssh":
+    ResourceEntry("mirage.resource.ssh:SSHResource",
+                  "mirage.resource.ssh:SSHConfig"),
+    "email":
+    ResourceEntry("mirage.resource.email:EmailResource",
+                  "mirage.resource.email:EmailConfig"),
+    "paperclip":
+    ResourceEntry("mirage.resource.paperclip:PaperclipResource",
+                  "mirage.resource.paperclip:PaperclipConfig"),
+}
+
+
+def build_resource(name: str, config: dict | None = None) -> "BaseResource":
+    """Construct a resource instance by its registry name.
+
+    Resolves resource and config classes lazily via importlib, so
+    importing this module does not pull in every resource's
+    dependencies. Only the resources actually used get loaded.
+
+    Args:
+        name (str): registry key such as ``"s3"`` or ``"ram"``.
+        config (dict | None): kwargs for the resource's ``Config``
+            class when one exists; otherwise raw resource kwargs
+            (e.g. ``{"root": "/tmp"}`` for ``"disk"``).
+
+    Returns:
+        BaseResource: a fresh resource instance.
+
+    Raises:
+        KeyError: ``name`` is not in ``REGISTRY``.
+    """
+    if name not in REGISTRY:
+        raise KeyError(f"unknown resource {name!r}; known: {sorted(REGISTRY)}")
+    entry = REGISTRY[name]
+    resource_cls = load_backend_class(entry.resource_path)
+    cfg_dict = dict(config or {})
+    if entry.config_path is None:
+        return resource_cls(**cfg_dict)
+    config_cls = load_backend_class(entry.config_path)
+    return resource_cls(config_cls(**cfg_dict))

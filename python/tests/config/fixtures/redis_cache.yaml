@@ -1,0 +1,10 @@
+cache:
+  type: redis
+  limit: 1GB
+  url: redis://localhost:6379/3
+  key_prefix: "test_cache:"
+
+mounts:
+  /:
+    resource: ram
+    mode: WRITE

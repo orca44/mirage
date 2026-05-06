@@ -1,0 +1,58 @@
+---
+title: Postgres
+icon: database
+description: Set up a Postgres connection for the Postgres resource.
+---
+
+## Credentials
+
+### 1. Get Your Connection DSN
+
+#### Local Postgres
+
+```bash
+# Default local instance
+DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres
+```
+
+#### Managed Postgres (Supabase, Neon, RDS, ...)
+
+Copy the connection string from your provider's dashboard. It usually looks like:
+
+```
+postgres://<user>:<password>@<host>:5432/<database>?sslmode=require
+```
+
+### 2. Set Environment Variables
+
+```bash
+# .env.development
+DATABASE_URL=postgres://user:pass@host:5432/db?sslmode=require
+```
+
+## Permissions
+
+The Postgres resource is read-only. Grant the role you connect with at minimum:
+
+```sql
+GRANT USAGE ON SCHEMA public TO mirage_reader;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO mirage_reader;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO mirage_reader;
+```
+
+If you only want to expose a subset of schemas, set `schemas` in the resource config:
+
+```python
+PostgresConfig(dsn=os.environ["DATABASE_URL"], schemas=["public", "analytics"])
+```
+
+## Limits
+
+The resource has built-in safety limits to keep an agent from accidentally pulling a whole table:
+
+- `default_row_limit` (1,000): default LIMIT applied to ad-hoc reads.
+- `max_read_rows` (10,000): hard ceiling per read.
+- `max_read_bytes` (10 MiB): hard ceiling per read.
+- `default_search_limit` (100): default LIMIT for search-style queries.
+
+Override in the config if you need bigger reads.

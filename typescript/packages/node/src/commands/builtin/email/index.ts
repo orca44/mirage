@@ -1,0 +1,60 @@
+// ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+// ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
+import type { RegisteredCommand } from '@struktoai/mirage-core'
+import { EMAIL_BASENAME } from './basename.ts'
+import { EMAIL_CAT } from './cat.ts'
+import { EMAIL_DIRNAME } from './dirname.ts'
+import { EMAIL_FIND } from './find.ts'
+import { EMAIL_FORWARD } from './email_forward.ts'
+import { EMAIL_GREP } from './grep.ts'
+import { EMAIL_HEAD } from './head.ts'
+import { EMAIL_JQ } from './jq.ts'
+import { EMAIL_LS } from './ls.ts'
+import { EMAIL_NL } from './nl.ts'
+import { EMAIL_READ } from './email_read.ts'
+import { EMAIL_REALPATH } from './realpath.ts'
+import { EMAIL_REPLY } from './email_reply.ts'
+import { EMAIL_REPLY_ALL } from './email_reply_all.ts'
+import { EMAIL_RG } from './rg.ts'
+import { EMAIL_SEND } from './email_send.ts'
+import { EMAIL_STAT } from './stat.ts'
+import { EMAIL_TAIL } from './tail.ts'
+import { EMAIL_TREE } from './tree.ts'
+import { EMAIL_TRIAGE } from './email_triage.ts'
+import { EMAIL_WC } from './wc.ts'
+
+export const EMAIL_COMMANDS: readonly RegisteredCommand[] = [
+  ...EMAIL_BASENAME,
+  ...EMAIL_CAT,
+  ...EMAIL_DIRNAME,
+  ...EMAIL_FIND,
+  ...EMAIL_GREP,
+  ...EMAIL_HEAD,
+  ...EMAIL_JQ,
+  ...EMAIL_LS,
+  ...EMAIL_NL,
+  ...EMAIL_REALPATH,
+  ...EMAIL_RG,
+  ...EMAIL_STAT,
+  ...EMAIL_TAIL,
+  ...EMAIL_TREE,
+  ...EMAIL_WC,
+  ...EMAIL_SEND,
+  ...EMAIL_REPLY,
+  ...EMAIL_REPLY_ALL,
+  ...EMAIL_FORWARD,
+  ...EMAIL_TRIAGE,
+  ...EMAIL_READ,
+]

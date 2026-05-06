@@ -1,0 +1,70 @@
+---
+title: OpenAI Agents SDK
+description: Run openai-agents against a Mirage workspace using MirageShellExecutor, MirageEditor, and MirageSandboxClient.
+icon: /images/openai-logo.svg
+---
+
+The OpenAI Agents Python SDK ([openai-agents](https://github.com/openai/openai-agents-python)) ships built-in `ShellTool` and `ApplyPatchTool` primitives, plus the newer `SandboxAgent`. Mirage provides drop-in replacements that route every shell command, patch, and sandbox call through your `Workspace` instead of the host.
+
+## Install
+
+```bash
+uv add 'mirage-ai[openai]'
+```
+
+This pulls in `openai>=2.30` and `openai-agents>=0.14.7`.
+
+## Tools (`ShellTool` + `ApplyPatchTool`)
+
+```python
+from agents import Agent, ApplyPatchTool, Runner, ShellTool
+
+from mirage import MountMode, Workspace
+from mirage.agents.openai_agents import (
+    MirageEditor,
+    MirageShellExecutor,
+    build_system_prompt,
+)
+from mirage.resource.ram import RAMResource
+
+ws = Workspace({"/": RAMResource()}, mode=MountMode.WRITE)
+
+agent = Agent(
+    name="Mirage RAM Agent",
+    model="gpt-5.5-mini",
+    instructions=build_system_prompt(
+        mount_info={"/": "In-memory filesystem (read/write)"},
+    ),
+    tools=[
+        ShellTool(executor=MirageShellExecutor(ws)),
+        ApplyPatchTool(editor=MirageEditor(ws)),
+    ],
+)
+```
+
+## Sandbox Agent
+
+For the new `SandboxAgent` API, use `MirageSandboxClient`:
+
+```python
+from agents.sandbox import SandboxAgent
+from mirage.agents.openai_agents import MirageSandboxClient
+
+client = MirageSandboxClient(ws)
+agent = SandboxAgent(name="...", model="gpt-5.5", instructions=ws.file_prompt)
+```
+
+## Exports
+
+| Symbol | Purpose |
+| --- | --- |
+| `MirageShellExecutor` | Drop-in `ShellTool` executor, runs inside `Workspace.execute()`. |
+| `MirageEditor` | Drop-in `ApplyPatchTool` editor, patches go through Mirage FS ops. |
+| `MirageSandboxClient` | Adapter for `agents.sandbox.SandboxAgent`. |
+| `MirageSandboxSession` | Per-conversation session bound to a workspace. |
+| `build_system_prompt` | Generates a system prompt that describes mounted paths to the model. |
+
+## Examples
+
+- [`examples/python/agents/openai_agents/ram_agent.py`](https://github.com/strukto-ai/mirage/blob/main/examples/python/agents/openai_agents/ram_agent.py), RAM-only sandbox.
+- [`examples/python/agents/openai_agents/sandbox_agent.py`](https://github.com/strukto-ai/mirage/blob/main/examples/python/agents/openai_agents/sandbox_agent.py), `SandboxAgent` over RAM + S3 + Slack.

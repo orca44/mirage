@@ -1,0 +1,128 @@
+// ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+// ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
+import {
+  type FileStat,
+  GSLIDES_COMMANDS,
+  GSLIDES_PROMPT,
+  GSLIDES_VFS_OPS,
+  GSLIDES_WRITE_PROMPT,
+  GSlidesAccessor,
+  type IndexCacheStore,
+  PathSpec,
+  RAMIndexCacheStore,
+  type RegisteredCommand,
+  type RegisteredOp,
+  type Resource,
+  ResourceName,
+  TokenManager,
+  gslidesRead,
+  gslidesReaddir,
+  gslidesResolveGlob,
+  gslidesStat,
+} from '@struktoai/mirage-core'
+import { redactGSlidesConfig, type GSlidesConfig, type GSlidesConfigRedacted } from './config.ts'
+
+export interface GSlidesResourceState {
+  type: string
+  needsOverride: boolean
+  redactedFields: readonly string[]
+  config: GSlidesConfigRedacted
+}
+
+export class GSlidesResource implements Resource {
+  readonly kind: string = ResourceName.GSLIDES
+  readonly isRemote: boolean = true
+  readonly indexTtl: number = 86_400
+  readonly prompt: string = GSLIDES_PROMPT
+  readonly writePrompt: string = GSLIDES_WRITE_PROMPT
+  readonly config: GSlidesConfig
+  readonly accessor: GSlidesAccessor
+  readonly index: IndexCacheStore
+
+  constructor(config: GSlidesConfig) {
+    this.config = config
+    const tm = new TokenManager({
+      clientId: config.clientId,
+      clientSecret: config.clientSecret,
+      refreshToken: config.refreshToken,
+    })
+    this.accessor = new GSlidesAccessor({ tokenManager: tm })
+    this.index = new RAMIndexCacheStore({ ttl: 86_400 })
+  }
+
+  open(): Promise<void> {
+    return Promise.resolve()
+  }
+
+  close(): Promise<void> {
+    return Promise.resolve()
+  }
+
+  commands(): readonly RegisteredCommand[] {
+    return GSLIDES_COMMANDS
+  }
+
+  ops(): readonly RegisteredOp[] {
+    return GSLIDES_VFS_OPS
+  }
+
+  readFile(p: PathSpec): Promise<Uint8Array> {
+    return gslidesRead(this.accessor, p, this.index)
+  }
+
+  readdir(p: PathSpec): Promise<string[]> {
+    return gslidesReaddir(this.accessor, p, this.index)
+  }
+
+  stat(p: PathSpec): Promise<FileStat> {
+    return gslidesStat(this.accessor, p, this.index)
+  }
+
+  async fingerprint(p: PathSpec): Promise<string | null> {
+    const lookup = await this.index.get(p.original)
+    return lookup.entry?.remoteTime ?? null
+  }
+
+  glob(paths: readonly PathSpec[], prefix = ''): Promise<PathSpec[]> {
+    const effective =
+      prefix !== ''
+        ? paths.map((p) =>
+            p.prefix !== ''
+              ? p
+              : new PathSpec({
+                  original: p.original,
+                  directory: p.directory,
+                  ...(p.pattern !== null ? { pattern: p.pattern } : {}),
+                  resolved: p.resolved,
+                  prefix,
+                }),
+          )
+        : paths
+    return gslidesResolveGlob(this.accessor, effective, this.index)
+  }
+
+  getState(): Promise<GSlidesResourceState> {
+    return Promise.resolve({
+      type: this.kind,
+      needsOverride: true,
+      redactedFields: ['clientSecret', 'refreshToken'],
+      config: redactGSlidesConfig(this.config),
+    })
+  }
+
+  loadState(_state: GSlidesResourceState): Promise<void> {
+    return Promise.resolve()
+  }
+}

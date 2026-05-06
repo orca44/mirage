@@ -1,0 +1,55 @@
+// ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+// ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
+import type { PathSpec } from '@struktoai/mirage-core'
+import type { RedisAccessor } from '../../accessor/redis.ts'
+import { norm, nowIso } from './utils.ts'
+
+export async function rename(accessor: RedisAccessor, src: PathSpec, dst: PathSpec): Promise<void> {
+  const s = norm(src.stripPrefix)
+  const d = norm(dst.stripPrefix)
+  const now = nowIso()
+  const store = accessor.store
+  if (await store.hasFile(s)) {
+    const data = await store.getFile(s)
+    const mod = await store.getModified(s)
+    if (data === null) throw new Error(`file not found: ${s}`)
+    await store.delFile(s)
+    await store.delModified(s)
+    await store.setFile(d, data)
+    await store.setModified(d, mod ?? now)
+    return
+  }
+  if (await store.hasDir(s)) {
+    const mod = await store.getModified(s)
+    await store.removeDir(s)
+    await store.delModified(s)
+    await store.addDir(d)
+    await store.setModified(d, mod ?? now)
+    const prefix = s.replace(/\/+$/, '') + '/'
+    const dPrefix = d.replace(/\/+$/, '') + '/'
+    const files = await store.listFiles()
+    for (const key of files) {
+      if (key.startsWith(prefix)) {
+        const newKey = dPrefix + key.slice(prefix.length)
+        const data = await store.getFile(key)
+        if (data === null) continue
+        await store.delFile(key)
+        await store.setFile(newKey, data)
+      }
+    }
+    return
+  }
+  throw new Error(`file not found: ${s}`)
+}
