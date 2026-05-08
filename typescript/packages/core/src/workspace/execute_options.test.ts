@@ -151,3 +151,51 @@ describe('execute({ env }): bash subshell semantics', () => {
     await ws.close()
   })
 })
+
+describe('execute({ signal }): mid-flight cancellation', () => {
+  it('rejects with AbortError when signal is pre-aborted (regression guard)', async () => {
+    const ws = await makeWs()
+    const ac = new AbortController()
+    ac.abort()
+    await expect(ws.execute('echo hi', { signal: ac.signal })).rejects.toMatchObject({
+      name: 'AbortError',
+    })
+    await ws.close()
+  })
+
+  it('aborts a sleeping command within ~timeout window', async () => {
+    const ws = await makeWs()
+    const t0 = Date.now()
+    await expect(
+      ws.execute('sleep 5', { signal: AbortSignal.timeout(100) }),
+    ).rejects.toMatchObject({ name: 'AbortError' })
+    expect(Date.now() - t0).toBeLessThan(1000)
+    await ws.close()
+  })
+
+  it('aborts inside a for loop within one iteration', async () => {
+    const ws = await makeWs()
+    const t0 = Date.now()
+    const ac = new AbortController()
+    setTimeout(() => ac.abort(), 100)
+    await expect(
+      ws.execute('for i in 1 2 3 4 5 6 7 8 9 10; do sleep 1; done', {
+        signal: ac.signal,
+      }),
+    ).rejects.toMatchObject({ name: 'AbortError' })
+    expect(Date.now() - t0).toBeLessThan(1500)
+    await ws.close()
+  })
+
+  it('aborts between LIST stages', async () => {
+    const ws = await makeWs()
+    const ac = new AbortController()
+    setTimeout(() => ac.abort(), 100)
+    await expect(
+      ws.execute('sleep 1 && sleep 1 && sleep 1 && echo done', {
+        signal: ac.signal,
+      }),
+    ).rejects.toMatchObject({ name: 'AbortError' })
+    await ws.close()
+  })
+})
