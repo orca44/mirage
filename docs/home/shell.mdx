@@ -8,79 +8,87 @@ The shell is how agents act on the workspace. `execute()` parses a bash-style co
 
 ## `execute()`
 
-<CodeGroup>
-```python Python
-async def execute(
-    self,
-    command: str,
-    session_id: str = DEFAULT_SESSION_ID,
-    stdin: AsyncIterator[bytes] | bytes | None = None,
-    provision: bool = False,
-    agent_id: str = DEFAULT_AGENT_ID,
-    native: bool | None = None,
-    cwd: str | None = None,
-    env: dict[str, str] | None = None,
-    cancel: asyncio.Event | None = None,
-) -> IOResult:
-    ...
-```
+<Tabs>
+  <Tab title="Python" icon="/images/python-logo.svg">
+    ```python
+    async def execute(
+        self,
+        command: str,
+        session_id: str = DEFAULT_SESSION_ID,
+        stdin: AsyncIterator[bytes] | bytes | None = None,
+        provision: bool = False,
+        agent_id: str = DEFAULT_AGENT_ID,
+        native: bool | None = None,
+        cwd: str | None = None,
+        env: dict[str, str] | None = None,
+        cancel: asyncio.Event | None = None,
+    ) -> IOResult:
+        ...
+    ```
+  </Tab>
+  <Tab title="TypeScript" icon="/images/typescript-logo.svg">
+    ```typescript
+    interface ExecuteOptions {
+      stdin?: ByteSource | null
+      provision?: boolean
+      sessionId?: string
+      agentId?: string
+      native?: boolean
+      signal?: AbortSignal
+      noHistory?: boolean
+      cwd?: string
+      env?: Record<string, string>
+    }
 
-```typescript TypeScript
-interface ExecuteOptions {
-  stdin?: ByteSource | null
-  provision?: boolean
-  sessionId?: string
-  agentId?: string
-  native?: boolean
-  signal?: AbortSignal
-  noHistory?: boolean
-  cwd?: string
-  env?: Record<string, string>
-}
-
-async execute(command: string, options?: ExecuteOptions): Promise<ExecuteResult>
-```
-
-```bash CLI
-mirage execute --workspace demo --command "ls /data"
-mirage execute --workspace demo --session agent-1 --command "pwd"
-# Per-call cwd / env / cancel are SDK-only today.
-# From the CLI, scope state with --session and stop background work with `mirage job kill`.
-```
-</CodeGroup>
+    async execute(command: string, options?: ExecuteOptions): Promise<ExecuteResult>
+    ```
+  </Tab>
+  <Tab title="CLI" icon="terminal">
+    ```bash
+    mirage execute --workspace demo --command "ls /data"
+    mirage execute --workspace demo --session agent-1 --command "pwd"
+    ```
+    Per-call `cwd` / `env` / `cancel` are SDK-only today. From the CLI, scope state with `--session` and stop background work with `mirage job kill`.
+  </Tab>
+</Tabs>
 
 ## Per-call overrides: `cwd`, `env`
 
 Providing `cwd` or `env` runs the command in an ephemeral session clone, like a bash subshell `(cd /data && cmd)`. Mutations like `cd` or `export` inside the call do NOT persist back to the workspace's session. To change persistent state, run the command without these options.
 
-<CodeGroup>
-```python Python
-# Persistent mutation (no options): like `cd /data; cmd`
-await ws.execute("cd /data")
-await ws.execute("ls")  # sees /data
+<Tabs>
+  <Tab title="Python​" icon="/images/python-logo.svg">
+    ```python
+    # Persistent mutation (no options): like `cd /data; cmd`
+    await ws.execute("cd /data")
+    await ws.execute("ls")  # sees /data
 
-# One-shot subshell (with cwd): like `(cd /data && cmd)`
-await ws.execute("ls", cwd="/data")
-# ws.cwd is unchanged; mutations inside don't leak
-```
+    # One-shot subshell (with cwd): like `(cd /data && cmd)`
+    await ws.execute("ls", cwd="/data")
+    # ws.cwd is unchanged; mutations inside don't leak
+    ```
+  </Tab>
+  <Tab title="TypeScript​" icon="/images/typescript-logo.svg">
+    ```typescript
+    // Persistent mutation
+    await ws.execute("cd /data")
+    await ws.execute("ls")  // sees /data
 
-```typescript TypeScript
-// Persistent mutation
-await ws.execute("cd /data")
-await ws.execute("ls")  // sees /data
-
-// One-shot subshell
-await ws.execute("ls", { cwd: "/data" })
-// ws.cwd is unchanged; mutations inside don't leak
-```
-
-```bash CLI
-# Per-call cwd is not a CLI flag yet. Spin up a dedicated session for transient state.
-mirage session create demo --id agent-1
-mirage execute -w demo -s agent-1 -c "cd /data"
-mirage execute -w demo -s agent-1 -c "ls"
-```
-</CodeGroup>
+    // One-shot subshell
+    await ws.execute("ls", { cwd: "/data" })
+    // ws.cwd is unchanged; mutations inside don't leak
+    ```
+  </Tab>
+  <Tab title="CLI​" icon="terminal">
+    ```bash
+    # Use a session for scoped state
+    mirage session create demo --id agent-1
+    mirage execute -w demo -s agent-1 -c "cd /data"
+    mirage execute -w demo -s agent-1 -c "ls"
+    ```
+    Per-call `cwd` is not a CLI flag yet. Spin up a dedicated session for transient state.
+  </Tab>
+</Tabs>
 
 This makes per-call overrides safe under concurrent calls on the same session. Two parallel `execute()` calls with different `cwd` see their own cwd without cross-contamination, even on the same session.
 
@@ -88,41 +96,45 @@ This makes per-call overrides safe under concurrent calls on the same session. T
 
 Both bindings support cooperative cancellation observed at recursion boundaries (LIST, PIPELINE, FOR/WHILE/UNTIL iterations, COMMAND, subshells, command substitution) and inside `sleep`. On cancel, the call raises an abort error.
 
-<CodeGroup>
-```python Python
-import asyncio
-from mirage.workspace.abort import MirageAbortError
+<Tabs>
+  <Tab title="Python​​" icon="/images/python-logo.svg">
+    ```python
+    import asyncio
+    from mirage.workspace.abort import MirageAbortError
 
-cancel = asyncio.Event()
+    cancel = asyncio.Event()
 
-async def trigger():
-    await asyncio.sleep(0.1)
-    cancel.set()
+    async def trigger():
+        await asyncio.sleep(0.1)
+        cancel.set()
 
-asyncio.create_task(trigger())
-try:
-    await ws.execute("sleep 5", cancel=cancel)
-except MirageAbortError:
-    print("aborted")
-```
-
-```typescript TypeScript
-try {
-  await ws.execute("sleep 5", { signal: AbortSignal.timeout(100) })
-} catch (e) {
-  if (e instanceof DOMException && e.name === "AbortError") {
-    console.log("aborted")
-  }
-}
-```
-
-```bash CLI
-# Per-call cancel / timeout is not a CLI flag yet.
-# Use --bg to get a job id and `mirage job kill` to terminate.
-JOB_ID=$(mirage execute -w demo -c "sleep 60" --bg)
-mirage job kill "$JOB_ID"
-```
-</CodeGroup>
+    asyncio.create_task(trigger())
+    try:
+        await ws.execute("sleep 5", cancel=cancel)
+    except MirageAbortError:
+        print("aborted")
+    ```
+  </Tab>
+  <Tab title="TypeScript​​" icon="/images/typescript-logo.svg">
+    ```typescript
+    try {
+      await ws.execute("sleep 5", { signal: AbortSignal.timeout(100) })
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") {
+        console.log("aborted")
+      }
+    }
+    ```
+  </Tab>
+  <Tab title="CLI​​" icon="terminal">
+    ```bash
+    # Background the job, then kill it
+    JOB_ID=$(mirage execute -w demo -c "sleep 60" --bg)
+    mirage job kill "$JOB_ID"
+    ```
+    Per-call `cancel` / timeout is not a CLI flag yet. Use `--bg` to get a job id and `mirage job kill` to terminate.
+  </Tab>
+</Tabs>
 
 ## Three Scopes for State
 
@@ -136,32 +148,35 @@ mirage job kill "$JOB_ID"
 
 Agent harnesses commonly fan out tool calls in parallel, each with its own `cwd`/`env`/`cancel`. The clone semantics make this race-free without per-call boilerplate.
 
-<CodeGroup>
-```python Python
-async def tool_call(cmd: str, cwd: str, env: dict[str, str], timeout: float):
-    cancel = asyncio.Event()
-    asyncio.get_event_loop().call_later(timeout, cancel.set)
-    return await ws.execute(cmd, cwd=cwd, env=env, cancel=cancel)
+<Tabs>
+  <Tab title="Python​​​" icon="/images/python-logo.svg">
+    ```python
+    async def tool_call(cmd: str, cwd: str, env: dict[str, str], timeout: float):
+        cancel = asyncio.Event()
+        asyncio.get_event_loop().call_later(timeout, cancel.set)
+        return await ws.execute(cmd, cwd=cwd, env=env, cancel=cancel)
 
-results = await asyncio.gather(
-    tool_call("ls", "/data", {"DEBUG": "1"}, 5.0),
-    tool_call("grep foo *.log", "/logs", {"DEBUG": "1"}, 5.0),
-)
-```
+    results = await asyncio.gather(
+        tool_call("ls", "/data", {"DEBUG": "1"}, 5.0),
+        tool_call("grep foo *.log", "/logs", {"DEBUG": "1"}, 5.0),
+    )
+    ```
+  </Tab>
+  <Tab title="TypeScript​​​" icon="/images/typescript-logo.svg">
+    ```typescript
+    async function toolCall(
+      cmd: string,
+      cwd: string,
+      env: Record<string, string>,
+      timeoutMs: number,
+    ) {
+      return ws.execute(cmd, { cwd, env, signal: AbortSignal.timeout(timeoutMs) })
+    }
 
-```typescript TypeScript
-async function toolCall(
-  cmd: string,
-  cwd: string,
-  env: Record<string, string>,
-  timeoutMs: number,
-) {
-  return ws.execute(cmd, { cwd, env, signal: AbortSignal.timeout(timeoutMs) })
-}
-
-const results = await Promise.all([
-  toolCall("ls", "/data", { DEBUG: "1" }, 5000),
-  toolCall("grep foo *.log", "/logs", { DEBUG: "1" }, 5000),
-])
-```
-</CodeGroup>
+    const results = await Promise.all([
+      toolCall("ls", "/data", { DEBUG: "1" }, 5000),
+      toolCall("grep foo *.log", "/logs", { DEBUG: "1" }, 5000),
+    ])
+    ```
+  </Tab>
+</Tabs>
