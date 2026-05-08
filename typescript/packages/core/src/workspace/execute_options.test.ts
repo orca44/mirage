@@ -232,4 +232,14 @@ describe('execute({ signal }): mid-flight cancellation', () => {
     expect(Date.now() - t0).toBeLessThan(1500)
     await ws.close()
   })
+
+  it('aborts inside a command substitution', async () => {
+    const ws = await makeWs()
+    const t0 = Date.now()
+    await expect(
+      ws.execute('echo "$(sleep 5)"', { signal: AbortSignal.timeout(100) }),
+    ).rejects.toMatchObject({ name: 'AbortError' })
+    expect(Date.now() - t0).toBeLessThan(1000)
+    await ws.close()
+  })
 })

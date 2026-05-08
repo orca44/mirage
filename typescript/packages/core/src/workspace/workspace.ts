@@ -594,7 +594,9 @@ export class Workspace {
     }
 
     const executeFn: ExecuteFn = async (cmd) => {
-      const res = await this.execute(cmd)
+      const innerOpts: ExecuteOptions & { provision?: false } = {}
+      if (options.signal !== undefined) innerOpts.signal = options.signal
+      const res = await this.execute(cmd, innerOpts)
       return new IOResult({
         exitCode: res.exitCode,
         stdout: res.stdout,
