@@ -96,4 +96,11 @@ describe('execute({ cwd }): bash subshell semantics', () => {
     expect(ws.sessionManager.get(ws.sessionManager.defaultId).lastExitCode).toBe(1)
     await ws.close()
   })
+
+  it('does not let function definitions leak back to session.functions', async () => {
+    const ws = await makeWs()
+    await ws.execute('greet() { echo hi; }', { cwd: '/ram' })
+    const session = ws.sessionManager.get(ws.sessionManager.defaultId)
+    expect(session.functions.greet).toBeUndefined()
+  })
 })

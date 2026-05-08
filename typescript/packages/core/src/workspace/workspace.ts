@@ -617,9 +617,9 @@ export class Workspace {
           cwd: options.cwd ?? targetSession.cwd,
           env: { ...targetSession.env },
           createdAt: targetSession.createdAt,
-          functions: targetSession.functions,
+          functions: { ...targetSession.functions },
           lastExitCode: targetSession.lastExitCode,
-          positionalArgs: targetSession.positionalArgs,
+          positionalArgs: [...targetSession.positionalArgs],
         })
       : targetSession
     const [[stdout, io], opRecords] = await runWithRecording(() =>
