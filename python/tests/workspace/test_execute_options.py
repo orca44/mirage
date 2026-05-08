@@ -256,8 +256,8 @@ async def _tool_call(ws, cmd, cwd_v, env_v, timeout):
 async def test_agent_pattern_parallel_tool_calls_each_with_own_options():
     ws = _make_ws()
     a, b = await asyncio.gather(
-        _tool_call(ws, "pwd; printenv DEBUG", "/ram/subdir",
-                   {"DEBUG": "one"}, 5.0),
+        _tool_call(ws, "pwd; printenv DEBUG", "/ram/subdir", {"DEBUG": "one"},
+                   5.0),
         _tool_call(ws, "pwd; printenv DEBUG", "/ram", {"DEBUG": "two"}, 5.0),
     )
     assert "/ram/subdir" in a.stdout.decode()

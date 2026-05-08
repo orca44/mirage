@@ -237,7 +237,8 @@ def test_provision_returns_dry_run_result(daemon, tmp_path):
 
 def test_execute_subshell_cwd_does_not_leak(daemon, tmp_path):
     cfg = _write_config(tmp_path)
-    _run_cli(daemon["env"], "workspace", "create", str(cfg), "--id", "subshell")
+    _run_cli(daemon["env"], "workspace", "create", str(cfg), "--id",
+             "subshell")
     _run_cli(daemon["env"], "execute", "-w", "subshell", "-c", "mkdir /sub")
     inside = _run_cli(daemon["env"], "execute", "-w", "subshell", "-c",
                       "(cd /sub && pwd)")
@@ -261,7 +262,8 @@ def test_execute_env_prefix_does_not_leak(daemon, tmp_path):
 
 def test_execute_background_then_cancel(daemon, tmp_path):
     cfg = _write_config(tmp_path)
-    _run_cli(daemon["env"], "workspace", "create", str(cfg), "--id", "cancel-test")
+    _run_cli(daemon["env"], "workspace", "create", str(cfg), "--id",
+             "cancel-test")
     submitted = _run_cli(daemon["env"], "execute", "-w", "cancel-test", "-c",
                          "sleep 30", "--background")
     job_id = submitted["job_id"]
