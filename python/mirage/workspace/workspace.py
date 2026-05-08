@@ -44,6 +44,7 @@ from mirage.shell.job_table import JobTable
 from mirage.shell.parse import parse
 from mirage.types import (DEFAULT_AGENT_ID, DEFAULT_SESSION_ID,
                           ConsistencyPolicy, FileStat, MountMode, PathSpec)
+from mirage.workspace.abort import MirageAbortError
 from mirage.workspace.fuse import FuseManager
 from mirage.workspace.history import ExecutionHistory
 from mirage.workspace.mount import Mount, MountRegistry
@@ -489,6 +490,7 @@ class Workspace:
         native: bool | None = None,
         cwd: str | None = None,
         env: dict[str, str] | None = None,
+        cancel: asyncio.Event | None = None,
     ) -> IOResult | ProvisionResult:
         """Execute a shell command in the workspace.
 
@@ -507,7 +509,13 @@ class Workspace:
                 session's env. Like cwd, these apply only to an ephemeral
                 clone, so `export` inside the command does not leak back
                 to the persistent session.
+            cancel: Optional asyncio.Event used to abort execution
+                mid-flight. When set, the executor raises MirageAbortError
+                at the next gate (entry to each node) and races inside
+                blocking sleeps so cancellation is observed promptly.
         """
+        if cancel is not None and cancel.is_set():
+            raise MirageAbortError()
         use_native = native if native is not None else self._native
         if use_native:
             if not self._fuse.mountpoint:
@@ -536,23 +544,28 @@ class Workspace:
         self._current_agent_id = agent_id
         io = IOResult()
         exec_node = ExecutionNode(command=command, exit_code=0)
+
+        async def _exec_for_recursion(cmd: str, **opts: Any) -> Any:
+            return await self.execute(cmd, cancel=cancel, **opts)
+
         try:
             ast = parse(command)
             if provision:
                 return await provision_node(self._registry, self.dispatch,
-                                            self.execute, ast,
+                                            _exec_for_recursion, ast,
                                             effective_session)
             records = start_recording()
             stdout, io, exec_node = await _execute_node(
                 self.dispatch,
                 self._registry,
                 self.job_table,
-                self.execute,
+                _exec_for_recursion,
                 self._current_agent_id,
                 ast,
                 effective_session,
                 stdin,
                 history=self.history,
+                cancel=cancel,
             )
             stdout = await apply_barrier(stdout, io, BarrierPolicy.VALUE)
             session.last_exit_code = io.exit_code
@@ -562,6 +575,8 @@ class Workspace:
             io.stdout = stdout
             await self.apply_io(io)
             return io
+        except MirageAbortError:
+            raise
         except Exception as exc:
             io = IOResult(exit_code=1, stderr=str(exc).encode())
             exec_node = ExecutionNode(command=command,
