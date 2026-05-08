@@ -108,6 +108,7 @@ export interface ExecuteNodeDeps {
   unmount?: (prefix: string) => Promise<void>
   pythonRuntime?: PyodideRuntime
   history?: CommandHistory
+  signal?: AbortSignal
 }
 
 export async function executeNode(
@@ -126,6 +127,10 @@ export async function executeNode(
 
   const { dispatch, registry, jobTable, executeFn, agentId } = deps
   const ntype = node.type
+
+  if (deps.signal?.aborted === true) {
+    throw new DOMException('execute aborted', 'AbortError')
+  }
 
   if (ntype === NT.COMMENT) {
     return [null, new IOResult(), new ExecutionNode({ command: '', exitCode: 0 })]

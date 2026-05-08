@@ -616,6 +616,7 @@ export class Workspace {
       unmount: (prefix: string) => this.unmount(prefix),
       pythonRuntime: this.pythonRuntime,
       history: this.history,
+      ...(options.signal !== undefined ? { signal: options.signal } : {}),
     }
     const targetSessionId = options.sessionId ?? this.sessionManager.defaultId
     const targetSession = this.sessionManager.get(targetSessionId)
