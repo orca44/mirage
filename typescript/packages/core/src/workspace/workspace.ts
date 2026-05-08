@@ -58,7 +58,7 @@ import type { PythonReplRunResult } from './executor/python/types.ts'
 import { executeNode } from './node/execute_node.ts'
 import { provisionNode } from './node/provision_node.ts'
 import { SessionManager } from './session/manager.ts'
-import type { Session } from './session/session.ts'
+import { Session } from './session/session.ts'
 import { ExecutionHistory } from './history.ts'
 import { ExecutionNode, ExecutionRecord } from './types.ts'
 
@@ -172,6 +172,14 @@ export interface ExecuteOptions {
   // implicit/utility commands the UI runs (e.g. `stat` for an `open` action)
   // that shouldn't pollute the user's command history.
   noHistory?: boolean
+  /**
+   * Per-call working directory. Providing this runs the command in an
+   * isolated session, like a bash subshell `(cd <cwd> && cmd)`. Mutations
+   * (cd, export) inside the call do NOT persist back to the workspace's
+   * session. To change the persistent cwd, assign `ws.cwd` directly or run
+   * `ws.execute('cd <path>')` without this option.
+   */
+  cwd?: string
 }
 
 const HELP_HINT =
@@ -602,8 +610,20 @@ export class Workspace {
     }
     const targetSessionId = options.sessionId ?? this.sessionManager.defaultId
     const targetSession = this.sessionManager.get(targetSessionId)
+    const useOverride = options.cwd !== undefined
+    const effectiveSession = useOverride
+      ? new Session({
+          sessionId: targetSession.sessionId,
+          cwd: options.cwd ?? targetSession.cwd,
+          env: { ...targetSession.env },
+          createdAt: targetSession.createdAt,
+          functions: targetSession.functions,
+          lastExitCode: targetSession.lastExitCode,
+          positionalArgs: targetSession.positionalArgs,
+        })
+      : targetSession
     const [[stdout, io], opRecords] = await runWithRecording(() =>
-      executeNode(deps, rootNode, targetSession, stdin, null),
+      executeNode(deps, rootNode, effectiveSession, stdin, null),
     )
     const materialized = await applyBarrier(stdout, io, BarrierPolicy.VALUE)
     io.syncExitCode()
