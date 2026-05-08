@@ -79,7 +79,6 @@
             "group": "Learn",
             "pages": [
               "home/architecture",
-              "home/concepts",
               "home/shell",
               "home/resource-matrix"
             ]
