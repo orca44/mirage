@@ -183,10 +183,10 @@ export interface ExecuteOptions {
   /**
    * Per-call environment variable overrides, layered on top of the
    * session's env. Providing this runs the command in an isolated session,
-   * like `env FOO=bar cmd` or `(export FOO=bar; cmd)`. Mutations
-   * (export) inside the call do NOT persist back to the workspace's
-   * session. To change the persistent env, assign `ws.env` directly or run
-   * `ws.execute('export FOO=bar')` without this option.
+   * like `env FOO=bar cmd`. Mutations (export) inside the call do NOT
+   * persist back to the workspace's session. To change the persistent env,
+   * assign `ws.env` directly or run `ws.execute('export FOO=bar')` without
+   * this option.
    */
   env?: Record<string, string>
 }
