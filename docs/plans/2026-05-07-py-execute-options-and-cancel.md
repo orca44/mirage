@@ -8,47 +8,52 @@
 
 1. **Per-call cwd/env:** Mirror TS exactly. When `cwd` or `env` is provided, build an ephemeral `Session` clone via `dataclasses.replace(...)` (or manual construction) with overrides applied (`env = {**session.env, **(env or {})}`). The executor runs against the clone. Mutations don't leak. Without overrides, current behavior preserved.
 
-2. **Mid-flight cancel:** Add `cancel: asyncio.Event | None = None`. Thread through `_execute_node`'s function chain. Gate at top of `_execute_node`: `if cancel is not None and cancel.is_set(): raise MirageAbortError(...)`. `handle_sleep` races `asyncio.sleep` against `cancel.wait()` via `asyncio.wait(..., return_when=FIRST_COMPLETED)`. The recursive `self.execute(...)` call inside `Workspace.execute` (used for `eval`, `source`, `$(...)`) forwards `cancel`.
+1. **Mid-flight cancel:** Add `cancel: asyncio.Event | None = None`. Thread through `_execute_node`'s function chain. Gate at top of `_execute_node`: `if cancel is not None and cancel.is_set(): raise MirageAbortError(...)`. `handle_sleep` races `asyncio.sleep` against `cancel.wait()` via `asyncio.wait(..., return_when=FIRST_COMPLETED)`. The recursive `self.execute(...)` call inside `Workspace.execute` (used for `eval`, `source`, `$(...)`) forwards `cancel`.
 
 **Two-scope model (same as TS):**
 
-| Need | API | Bash equivalent |
-|---|---|---|
-| One isolated command | `execute(cmd, cwd=..., env=...)` | `(cd /data && cmd)` |
-| Many isolated commands sharing scoped state | `session_id=...` | a separate terminal |
-| Persistent shell mutations | run without options | `cd /data; cmd` |
+| Need                                        | API                              | Bash equivalent     |
+| ------------------------------------------- | -------------------------------- | ------------------- |
+| One isolated command                        | `execute(cmd, cwd=..., env=...)` | `(cd /data && cmd)` |
+| Many isolated commands sharing scoped state | `session_id=...`                 | a separate terminal |
+| Persistent shell mutations                  | run without options              | `cd /data; cmd`     |
 
 **Tech stack:** Python 3.11+, asyncio, pytest, `tree-sitter-bash`. Tests live under `python/tests/workspace/`.
 
 **Key files:**
+
 - [python/mirage/workspace/workspace.py:481](python/mirage/workspace/workspace.py#L481) — `execute()` signature
 - [python/mirage/workspace/session/session.py](python/mirage/workspace/session/session.py) — `Session` dataclass
 - [python/mirage/workspace/node/execute_node.py:60](python/mirage/workspace/node/execute_node.py#L60) — `execute_node()` recursion entry
 - [python/mirage/workspace/executor/builtins.py:756](python/mirage/workspace/executor/builtins.py#L756) — `handle_sleep`
 
 **Out of scope:**
+
 - Changing the ProvisionResult/IOResult error path.
 - Native FUSE mode (separate code path; `cancel` etc. don't apply there).
 
----
+______________________________________________________________________
 
 ## Test commands
 
 From repo root:
+
 ```bash
 ./python/.venv/bin/python -m pytest python/tests/workspace/test_execute_options.py -xvs
 ```
 
 For full Python suite (per memory rule, only run when not doing parallel work):
+
 ```bash
 cd python && uv run pytest
 ```
 
----
+______________________________________________________________________
 
 ## Task 1: Failing tests for per-call `cwd` and `env`
 
 **Files:**
+
 - Create: `python/tests/workspace/test_execute_options.py`
 
 Use existing pytest patterns from neighboring tests (e.g. `python/tests/workspace/test_cwd_integration.py` if present, or `test_workspace.py`). Use `RAMResource` mounted at `/ram/`. Mark tests `@pytest.mark.asyncio`.
@@ -207,11 +212,12 @@ git add python/tests/workspace/test_execute_options.py
 git commit -m "test(python): add failing tests for per-call cwd and env"
 ```
 
----
+______________________________________________________________________
 
 ## Task 2: Implement per-call cwd + env via Session clone
 
 **Files:**
+
 - Modify: [python/mirage/workspace/workspace.py:481](python/mirage/workspace/workspace.py#L481)
 
 **Step 1: Update `execute()` signature and clone the session**
@@ -288,11 +294,12 @@ git add python/mirage/workspace/workspace.py
 git commit -m "feat(python): support per-call cwd and env in Workspace.execute()"
 ```
 
----
+______________________________________________________________________
 
 ## Task 3: Failing tests for `cancel`
 
 **Files:**
+
 - Modify: `python/tests/workspace/test_execute_options.py`
 
 **Step 1: Append cancel tests**
@@ -418,11 +425,12 @@ git add python/tests/workspace/test_execute_options.py
 git commit -m "test(python): add failing tests for mid-flight cancel"
 ```
 
----
+______________________________________________________________________
 
 ## Task 4: Implement cancel + sleep race + executeFn forwarding
 
 **Files:**
+
 - Create: `python/mirage/workspace/abort.py` (new)
 - Modify: `python/mirage/workspace/workspace.py`
 - Modify: `python/mirage/workspace/node/execute_node.py`
@@ -549,7 +557,7 @@ git add python/mirage/workspace/abort.py python/mirage/workspace/workspace.py py
 git commit -m "feat(python): support mid-flight cancel via asyncio.Event with sleep race"
 ```
 
----
+______________________________________________________________________
 
 ## Task 5: Final verification
 
@@ -584,7 +592,7 @@ git diff --stat <base>..HEAD
 
 Confirm only Python files touched (plus the plan).
 
----
+______________________________________________________________________
 
 ## Notes
 
