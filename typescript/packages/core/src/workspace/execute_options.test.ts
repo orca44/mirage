@@ -271,18 +271,18 @@ describe('execute({ signal }): mid-flight cancellation', () => {
     const ws = await makeWs()
     await ws.execute('loopy() { while true; do sleep 1; done; }')
     const t0 = Date.now()
-    await expect(
-      ws.execute('loopy', { signal: AbortSignal.timeout(100) }),
-    ).rejects.toMatchObject({ name: 'AbortError' })
+    await expect(ws.execute('loopy', { signal: AbortSignal.timeout(100) })).rejects.toMatchObject({
+      name: 'AbortError',
+    })
     expect(Date.now() - t0).toBeLessThan(1500)
     await ws.close()
   })
 
   it('workspace remains usable after an aborted command', async () => {
     const ws = await makeWs()
-    await expect(
-      ws.execute('sleep 5', { signal: AbortSignal.timeout(50) }),
-    ).rejects.toMatchObject({ name: 'AbortError' })
+    await expect(ws.execute('sleep 5', { signal: AbortSignal.timeout(50) })).rejects.toMatchObject({
+      name: 'AbortError',
+    })
     const r = await ws.execute('echo recovered')
     expect(r.exitCode).toBe(0)
     expect(stdoutStr(r).trim()).toBe('recovered')
@@ -293,9 +293,9 @@ describe('execute({ signal }): mid-flight cancellation', () => {
     const ws = await makeWs()
     await ws.execute('true')
     expect(ws.sessionManager.get(ws.sessionManager.defaultId).lastExitCode).toBe(0)
-    await expect(
-      ws.execute('sleep 5', { signal: AbortSignal.timeout(50) }),
-    ).rejects.toMatchObject({ name: 'AbortError' })
+    await expect(ws.execute('sleep 5', { signal: AbortSignal.timeout(50) })).rejects.toMatchObject({
+      name: 'AbortError',
+    })
     expect(ws.sessionManager.get(ws.sessionManager.defaultId).lastExitCode).toBe(0)
     await ws.close()
   })
