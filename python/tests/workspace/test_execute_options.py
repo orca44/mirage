@@ -241,3 +241,43 @@ async def test_cancel_workspace_remains_usable():
     r = await ws.execute("echo recovered")
     assert r.exit_code == 0
     assert r.stdout.decode().strip() == "recovered"
+
+
+# ── agent harness pattern ─────────────────────────────────────────
+
+
+async def _tool_call(ws, cmd, cwd_v, env_v, timeout):
+    cancel = asyncio.Event()
+    asyncio.get_event_loop().call_later(timeout, cancel.set)
+    return await ws.execute(cmd, cwd=cwd_v, env=env_v, cancel=cancel)
+
+
+@pytest.mark.asyncio
+async def test_agent_pattern_parallel_tool_calls_each_with_own_options():
+    ws = _make_ws()
+    a, b = await asyncio.gather(
+        _tool_call(ws, "pwd; printenv DEBUG", "/ram/subdir",
+                   {"DEBUG": "one"}, 5.0),
+        _tool_call(ws, "pwd; printenv DEBUG", "/ram", {"DEBUG": "two"}, 5.0),
+    )
+    assert "/ram/subdir" in a.stdout.decode()
+    assert "one" in a.stdout.decode()
+    assert "/ram" in b.stdout.decode()
+    assert "two" in b.stdout.decode()
+    session = ws.get_session(DEFAULT_SESSION_ID)
+    assert session.cwd != "/ram/subdir"
+    assert "DEBUG" not in session.env
+
+
+@pytest.mark.asyncio
+async def test_agent_pattern_one_aborts_while_siblings_complete():
+    ws = _make_ws()
+    settled = await asyncio.gather(
+        _tool_call(ws, "sleep 5", "/ram/subdir", {"DEBUG": "one"}, 0.1),
+        _tool_call(ws, "echo ok", "/ram", {"DEBUG": "two"}, 5.0),
+        return_exceptions=True,
+    )
+    assert isinstance(settled[0], Exception)
+    assert "abort" in str(settled[0]).lower()
+    assert not isinstance(settled[1], Exception)
+    assert settled[1].stdout.decode().strip() == "ok"

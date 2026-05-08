@@ -17,7 +17,7 @@ import { OpsRegistry } from '../ops/registry.ts'
 import { RAMResource } from '../resource/ram/ram.ts'
 import { MountMode } from '../types.ts'
 import { getTestParser, stdoutStr } from './fixtures/workspace_fixture.ts'
-import { Workspace } from './workspace.ts'
+import { ExecuteResult, Workspace } from './workspace.ts'
 
 const ENC = new TextEncoder()
 
@@ -297,6 +297,50 @@ describe('execute({ signal }): mid-flight cancellation', () => {
       name: 'AbortError',
     })
     expect(ws.sessionManager.get(ws.sessionManager.defaultId).lastExitCode).toBe(0)
+    await ws.close()
+  })
+})
+
+describe('execute(): agent harness pattern', () => {
+  async function toolCall(
+    ws: Workspace,
+    cmd: string,
+    cwd: string,
+    env: Record<string, string>,
+    timeoutMs: number,
+  ): Promise<ExecuteResult> {
+    return ws.execute(cmd, { cwd, env, signal: AbortSignal.timeout(timeoutMs) })
+  }
+
+  it('parallel toolCalls with their own cwd+env+timeout all succeed', async () => {
+    const ws = await makeWs()
+    const [a, b] = await Promise.all([
+      toolCall(ws, 'pwd; printenv DEBUG', '/ram/subdir', { DEBUG: 'one' }, 5000),
+      toolCall(ws, 'pwd; printenv DEBUG', '/ram', { DEBUG: 'two' }, 5000),
+    ])
+    expect(stdoutStr(a)).toContain('/ram/subdir')
+    expect(stdoutStr(a)).toContain('one')
+    expect(stdoutStr(b)).toContain('/ram')
+    expect(stdoutStr(b)).toContain('two')
+    expect(ws.cwd).not.toBe('/ram/subdir')
+    expect(ws.env.DEBUG).toBeUndefined()
+    await ws.close()
+  })
+
+  it('one parallel toolCall aborts on its own timeout while siblings continue', async () => {
+    const ws = await makeWs()
+    const settled = await Promise.allSettled([
+      toolCall(ws, 'sleep 5', '/ram/subdir', { DEBUG: 'one' }, 100),
+      toolCall(ws, 'echo ok', '/ram', { DEBUG: 'two' }, 5000),
+    ])
+    expect(settled[0]?.status).toBe('rejected')
+    if (settled[0]?.status === 'rejected') {
+      expect(settled[0].reason).toMatchObject({ name: 'AbortError' })
+    }
+    expect(settled[1]?.status).toBe('fulfilled')
+    if (settled[1]?.status === 'fulfilled') {
+      expect(stdoutStr(settled[1].value).trim()).toBe('ok')
+    }
     await ws.close()
   })
 })
