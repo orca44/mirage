@@ -94,7 +94,7 @@ export async function expandNode(
   }
 
   if (ntype === NT.EXPANSION) {
-    return expandBraces(tsNode, session.env, callStack)
+    return expandBraces(tsNode, session.env, callStack, session.arrays)
   }
 
   if (ntype === NT.COMMAND_SUBSTITUTION) {

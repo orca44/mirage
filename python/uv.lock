@@ -3031,7 +3031,7 @@ wheels = [
 
 [[package]]
 name = "mirage-ai"
-version = "0.0.1a1"
+version = "0.0.1"
 source = { editable = "." }
 dependencies = [
     { name = "aiofiles" },
@@ -3039,11 +3039,13 @@ dependencies = [
     { name = "fastapi" },
     { name = "httpx" },
     { name = "jq" },
+    { name = "mfusepy" },
     { name = "numpy" },
     { name = "orjson" },
     { name = "pillow" },
     { name = "pypdfium2" },
     { name = "python-dotenv" },
+    { name = "python-multipart" },
     { name = "pyyaml" },
     { name = "tree-sitter" },
     { name = "tree-sitter-bash" },
@@ -3194,6 +3196,7 @@ requires-dist = [
     { name = "jq", specifier = ">=1.11.0" },
     { name = "langfuse", marker = "extra == 'langfuse'", specifier = ">=4.2.0" },
     { name = "markitdown", marker = "extra == 'camel'", specifier = ">=0.1.5" },
+    { name = "mfusepy", specifier = ">=1.0.0" },
     { name = "mfusepy", marker = "extra == 'fuse'", specifier = ">=1.0.0" },
     { name = "mirage-ai", extras = ["anthropic"], marker = "extra == 'all'" },
     { name = "mirage-ai", extras = ["audio"], marker = "extra == 'all'" },
@@ -3234,6 +3237,7 @@ requires-dist = [
     { name = "pypdfium2", specifier = ">=5.7.0" },
     { name = "pypdfium2", marker = "extra == 'pdf'", specifier = ">=5.6.0" },
     { name = "python-dotenv", specifier = ">=1.2.2" },
+    { name = "python-multipart", specifier = ">=0.0.20" },
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "redis", extras = ["hiredis"], marker = "extra == 'redis'", specifier = ">=5.0" },
     { name = "sherpa-onnx", marker = "extra == 'audio'", specifier = ">=1.12.34" },

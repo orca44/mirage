@@ -20,6 +20,7 @@ import { IOResult, materialize } from '../../io/types.ts'
 import type { Resource } from '../../resource/base.ts'
 import { CallStack } from '../../shell/call_stack.ts'
 import type { JobTable } from '../../shell/job_table.ts'
+import { ERREXIT_EXEMPT_TYPES } from '../../shell/types.ts'
 import { PathSpec } from '../../types.ts'
 import type { Mount } from '../mount/mount.ts'
 import type { MountRegistry } from '../mount/registry.ts'
@@ -780,15 +781,19 @@ async function executeShellFunction(
   try {
     for (const cmd of body) {
       try {
-        const [stdout, io, execNode] = await executeNode(
-          cmd as Parameters<ExecuteNodeFn>[0],
-          session,
-          stdin,
-          cs,
-        )
+        const cmdNode = cmd as Parameters<ExecuteNodeFn>[0]
+        const [stdout, io, execNode] = await executeNode(cmdNode, session, stdin, cs)
         if (stdout !== null) allStdout.push(stdout)
         mergedIo = await mergedIo.merge(io)
         lastExec = execNode
+        if (
+          io.exitCode !== 0 &&
+          session.shellOptions.errexit === true &&
+          !ERREXIT_EXEMPT_TYPES.has(cmdNode.type)
+        ) {
+          mergedIo.exitCode = io.exitCode
+          break
+        }
       } catch (err) {
         if (err instanceof ReturnSignal) {
           mergedIo.exitCode = err.exitCode

@@ -75,31 +75,38 @@ describe('lookupVar', () => {
 
 describe('expandBraces', () => {
   it('${VAR} reads from env', () => {
+    const varName = stringNode(NT.VARIABLE_NAME, 'FOO')
     const node: TSNodeLike = {
       type: NT.EXPANSION,
       text: '${FOO}',
-      children: [],
-      namedChildren: [stringNode(NT.VARIABLE_NAME, 'FOO')],
+      children: [stringNode('${', '${'), varName, stringNode('}', '}')],
+      namedChildren: [varName],
     }
     expect(expandBraces(node, { FOO: 'bar' }, null)).toBe('bar')
   })
 
   it('${VAR:-default} falls back when missing', () => {
+    const varName = stringNode(NT.VARIABLE_NAME, 'FOO')
+    const op = stringNode(':-', ':-')
+    const word = stringNode(NT.WORD, 'default')
     const node: TSNodeLike = {
       type: NT.EXPANSION,
       text: '${FOO:-default}',
-      children: [],
-      namedChildren: [stringNode(NT.VARIABLE_NAME, 'FOO'), stringNode(NT.WORD, 'default')],
+      children: [stringNode('${', '${'), varName, op, word, stringNode('}', '}')],
+      namedChildren: [varName, word],
     }
     expect(expandBraces(node, {}, null)).toBe('default')
   })
 
   it('${VAR:-default} uses actual value when present', () => {
+    const varName = stringNode(NT.VARIABLE_NAME, 'FOO')
+    const op = stringNode(':-', ':-')
+    const word = stringNode(NT.WORD, 'default')
     const node: TSNodeLike = {
       type: NT.EXPANSION,
       text: '${FOO:-default}',
-      children: [],
-      namedChildren: [stringNode(NT.VARIABLE_NAME, 'FOO'), stringNode(NT.WORD, 'default')],
+      children: [stringNode('${', '${'), varName, op, word, stringNode('}', '}')],
+      namedChildren: [varName, word],
     }
     expect(expandBraces(node, { FOO: 'real' }, null)).toBe('real')
   })

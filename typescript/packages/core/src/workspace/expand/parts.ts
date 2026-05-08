@@ -37,6 +37,67 @@ function getPositionalArgs(session: Session, callStack: CallStack | null): strin
   return session.positionalArgs
 }
 
+function arrayAtName(child: TSNodeLike): string | null {
+  if (child.type !== NT.EXPANSION) return null
+  for (const c of child.children) {
+    if (c.type === '#' && c.isNamed !== true) return null
+  }
+  let subscript: TSNodeLike | null = null
+  for (const c of child.namedChildren) {
+    if (c.type === 'subscript') {
+      subscript = c
+      break
+    }
+  }
+  if (subscript === null) return null
+  let varName: string | null = null
+  let idxText = ''
+  for (const sc of subscript.namedChildren) {
+    if (sc.type === NT.VARIABLE_NAME) varName = sc.text
+    else idxText = sc.text
+  }
+  if (varName !== null && idxText === '@') return varName
+  return null
+}
+
+function stringHasArrayAt(node: TSNodeLike): boolean {
+  for (const c of node.children) {
+    if (arrayAtName(c) !== null) return true
+  }
+  return false
+}
+
+async function expandStringWithArray(
+  node: TSNodeLike,
+  session: Session,
+  executeFn: ExecuteFn,
+  callStack: CallStack | null,
+): Promise<string[]> {
+  const arrays = session.arrays
+  const fragments: string[] = ['']
+  for (const child of node.children) {
+    if (child.type === NT.DQUOTE) continue
+    const arrName = arrayAtName(child)
+    if (arrName !== null) {
+      const arr = arrays[arrName]
+      if (arr === undefined || arr.length === 0) continue
+      const last = fragments.length - 1
+      if (arr.length === 1) {
+        fragments[last] = (fragments[last] ?? '') + (arr[0] ?? '')
+      } else {
+        fragments[last] = (fragments[last] ?? '') + (arr[0] ?? '')
+        for (let i = 1; i < arr.length - 1; i++) fragments.push(arr[i] ?? '')
+        fragments.push(arr[arr.length - 1] ?? '')
+      }
+      continue
+    }
+    const text = await expandNode(child, session, executeFn, callStack)
+    const last = fragments.length - 1
+    fragments[last] = (fragments[last] ?? '') + text
+  }
+  return fragments
+}
+
 export async function expandParts(
   parts: TSNodeLike[],
   session: Session,
@@ -51,6 +112,11 @@ export async function expandParts(
         result.push(...positional)
         continue
       }
+    }
+    if (p.type === NT.STRING && stringHasArrayAt(p)) {
+      const words = await expandStringWithArray(p, session, executeFn, callStack)
+      result.push(...words)
+      continue
     }
     const expanded = await expandNode(p, session, executeFn, callStack)
     if (p.type === NT.COMMAND_SUBSTITUTION) {

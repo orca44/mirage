@@ -116,7 +116,8 @@ async def expand_node(
         return prefix + _lookup_var(var, session, call_stack)
 
     if ntype == NT.EXPANSION:
-        return _expand_braces(ts_node, session.env, call_stack)
+        return _expand_braces(ts_node, session.env,
+                              getattr(session, "arrays", {}), call_stack)
 
     if ntype == NT.COMMAND_SUBSTITUTION:
         inner_cmds = [
