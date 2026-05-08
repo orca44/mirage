@@ -38,7 +38,7 @@ async function makeWs(): Promise<Workspace> {
   )
 }
 
-describe('execute({ cwd }) — bash subshell semantics', () => {
+describe('execute({ cwd }): bash subshell semantics', () => {
   it('runs the command in the override cwd, like (cd /ram/subdir && pwd)', async () => {
     const ws = await makeWs()
     const r = await ws.execute('pwd', { cwd: '/ram/subdir' })
