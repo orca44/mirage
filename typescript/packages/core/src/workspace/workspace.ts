@@ -167,6 +167,13 @@ export interface ExecuteOptions {
   sessionId?: string
   agentId?: string
   native?: boolean
+  /**
+   * Abort the in-progress execution. Observed cooperatively at recursion
+   * boundaries between LIST/PIPELINE/loop iterations and inside `sleep`.
+   * Long-running synchronous primitives (e.g. a single large file read)
+   * may still complete before the signal lands. On abort, throws
+   * `DOMException('execute aborted', 'AbortError')`.
+   */
   signal?: AbortSignal
   // When true, do not record this execution in history. Useful for
   // implicit/utility commands the UI runs (e.g. `stat` for an `open` action)

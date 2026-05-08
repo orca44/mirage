@@ -155,6 +155,7 @@ export async function executeNode(
       deps.unmount,
       deps.pythonRuntime,
       deps.history,
+      deps.signal,
     )
   }
 
@@ -460,6 +461,7 @@ async function executeCommand(
   unmount?: (prefix: string) => Promise<void>,
   pythonRuntime?: PyodideRuntime,
   history?: CommandHistory,
+  signal?: AbortSignal,
 ): Promise<Result> {
   const name = getCommandName(node)
   const parts = getParts(node)
@@ -580,7 +582,7 @@ async function executeCommand(
     )
   }
   if (name === SB.PRINTF) return handlePrintf(finalExpanded.slice(1))
-  if (name === SB.SLEEP) return handleSleep(finalExpanded.slice(1))
+  if (name === SB.SLEEP) return handleSleep(finalExpanded.slice(1), signal)
   if (name === SB.READ) {
     return handleRead(finalExpanded.slice(1), session, stdin)
   }

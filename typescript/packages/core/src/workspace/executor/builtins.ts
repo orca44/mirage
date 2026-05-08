@@ -681,7 +681,10 @@ export async function handleSource(
   return [io.stdout, io, new ExecutionNode({ command: `source ${raw}`, exitCode: io.exitCode })]
 }
 
-export async function handleSleep(args: string[]): Promise<Result> {
+export async function handleSleep(
+  args: string[],
+  signal?: AbortSignal,
+): Promise<Result> {
   const raw = args[0]
   if (raw === undefined) {
     return [null, new IOResult(), new ExecutionNode({ command: 'sleep', exitCode: 0 })]
@@ -695,6 +698,21 @@ export async function handleSleep(args: string[]): Promise<Result> {
       new ExecutionNode({ command: 'sleep', exitCode: 1 }),
     ]
   }
-  await new Promise<void>((resolve) => setTimeout(resolve, seconds * 1000))
+  await new Promise<void>((resolve, reject) => {
+    if (signal?.aborted === true) {
+      reject(new DOMException('execute aborted', 'AbortError'))
+      return
+    }
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const onAbort = (): void => {
+      if (timer !== null) clearTimeout(timer)
+      reject(new DOMException('execute aborted', 'AbortError'))
+    }
+    timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort)
+      resolve()
+    }, seconds * 1000)
+    signal?.addEventListener('abort', onAbort, { once: true })
+  })
   return [null, new IOResult(), new ExecutionNode({ command: 'sleep', exitCode: 0 })]
 }
