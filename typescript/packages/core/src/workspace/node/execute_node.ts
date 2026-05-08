@@ -18,6 +18,7 @@ import { asyncChain } from '../../io/stream.ts'
 import type { ByteSource } from '../../io/types.ts'
 import { IOResult, materialize } from '../../io/types.ts'
 import type { Resource } from '../../resource/base.ts'
+import { makeAbortError } from '../abort.ts'
 import type { CallStack } from '../../shell/call_stack.ts'
 import {
   getCaseItems,
@@ -129,7 +130,7 @@ export async function executeNode(
   const ntype = node.type
 
   if (deps.signal?.aborted === true) {
-    throw new DOMException('execute aborted', 'AbortError')
+    throw makeAbortError()
   }
 
   if (ntype === NT.COMMENT) {

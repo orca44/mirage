@@ -27,6 +27,7 @@ import { FileType, PathSpec } from '../../types.ts'
 import type { Mount } from '../mount/mount.ts'
 import { DEV_PREFIX, type MountRegistry } from '../mount/registry.ts'
 import type { Session } from '../session/session.ts'
+import { sleep } from '../abort.ts'
 import { ExecutionNode } from '../types.ts'
 import type { DispatchFn } from './cross_mount.ts'
 import { ReturnSignal } from './command.ts'
@@ -695,21 +696,6 @@ export async function handleSleep(args: string[], signal?: AbortSignal): Promise
       new ExecutionNode({ command: 'sleep', exitCode: 1 }),
     ]
   }
-  await new Promise<void>((resolve, reject) => {
-    if (signal?.aborted === true) {
-      reject(new DOMException('execute aborted', 'AbortError'))
-      return
-    }
-    let timer: ReturnType<typeof setTimeout> | null = null
-    const onAbort = (): void => {
-      if (timer !== null) clearTimeout(timer)
-      reject(new DOMException('execute aborted', 'AbortError'))
-    }
-    timer = setTimeout(() => {
-      signal?.removeEventListener('abort', onAbort)
-      resolve()
-    }, seconds * 1000)
-    signal?.addEventListener('abort', onAbort, { once: true })
-  })
+  await sleep(seconds * 1000, signal)
   return [null, new IOResult(), new ExecutionNode({ command: 'sleep', exitCode: 0 })]
 }

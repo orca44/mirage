@@ -55,6 +55,7 @@ import { handlePythonRepl } from './executor/python/handle.ts'
 import type { BridgeDispatchFn, MirageEntry } from './executor/python/mirage_bridge.ts'
 import { PyodideRuntime } from './executor/python/runtime.ts'
 import type { PythonReplRunResult } from './executor/python/types.ts'
+import { makeAbortError } from './abort.ts'
 import { executeNode } from './node/execute_node.ts'
 import { provisionNode } from './node/provision_node.ts'
 import { SessionManager } from './session/manager.ts'
@@ -552,7 +553,7 @@ export class Workspace {
     options: ExecuteOptions = {},
   ): Promise<ExecuteResult | ProvisionResult> {
     if (options.signal?.aborted === true) {
-      throw new DOMException('execute aborted', 'AbortError')
+      throw makeAbortError()
     }
     const stdin = options.stdin ?? null
     if (options.provision === true) return this.provision(command)
@@ -651,7 +652,7 @@ export class Workspace {
 
     this.records.push(...opRecords)
     const sessionId = targetSession.sessionId
-    const sessionCwd = targetSession.cwd
+    const sessionCwd = effectiveSession.cwd
     for (const rec of opRecords) {
       await this.observer.logOp(rec, callAgentId, sessionId, sessionCwd)
     }
