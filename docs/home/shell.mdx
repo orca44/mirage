@@ -83,9 +83,9 @@ Providing `cwd` or `env` runs the command in an ephemeral session clone, like a 
     ```bash
     # Use a real bash subshell inside the command string
     mirage execute -w demo -c "(cd /data && ls)"
-    mirage execute -w demo -c "env FOO=bar printenv FOO"
+    mirage execute -w demo -c "(export FOO=bar; printenv FOO)"
     ```
-    The CLI doesn't have `--cwd` / `--env` flags, but bash subshell syntax `(cd ... && cmd)` and the `env` prefix give the same per-call isolation. Mutations inside the parens don't leak.
+    The CLI doesn't have `--cwd` / `--env` flags, but bash subshell syntax `(cd ... && cmd)` and `(export FOO=bar; cmd)` give the same per-call isolation. Mutations inside the parens don't leak.
   </Tab>
 </Tabs>
 

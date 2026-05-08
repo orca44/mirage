@@ -235,6 +235,42 @@ def test_provision_returns_dry_run_result(daemon, tmp_path):
     _run_cli(daemon["env"], "workspace", "delete", "provision-test")
 
 
+def test_execute_subshell_cwd_does_not_leak(daemon, tmp_path):
+    cfg = _write_config(tmp_path)
+    _run_cli(daemon["env"], "workspace", "create", str(cfg), "--id", "subshell")
+    _run_cli(daemon["env"], "execute", "-w", "subshell", "-c", "mkdir /sub")
+    inside = _run_cli(daemon["env"], "execute", "-w", "subshell", "-c",
+                      "(cd /sub && pwd)")
+    assert inside["stdout"].strip() == "/sub"
+    after = _run_cli(daemon["env"], "execute", "-w", "subshell", "-c", "pwd")
+    assert after["stdout"].strip() == "/"
+    _run_cli(daemon["env"], "workspace", "delete", "subshell")
+
+
+def test_execute_env_prefix_does_not_leak(daemon, tmp_path):
+    cfg = _write_config(tmp_path)
+    _run_cli(daemon["env"], "workspace", "create", str(cfg), "--id", "envpref")
+    inside = _run_cli(daemon["env"], "execute", "-w", "envpref", "-c",
+                      "(export FOO=bar; printenv FOO)")
+    assert inside["stdout"].strip() == "bar"
+    after = _run_cli(daemon["env"], "execute", "-w", "envpref", "-c",
+                     "printenv FOO || echo absent")
+    assert after["stdout"].strip() == "absent"
+    _run_cli(daemon["env"], "workspace", "delete", "envpref")
+
+
+def test_execute_background_then_cancel(daemon, tmp_path):
+    cfg = _write_config(tmp_path)
+    _run_cli(daemon["env"], "workspace", "create", str(cfg), "--id", "cancel-test")
+    submitted = _run_cli(daemon["env"], "execute", "-w", "cancel-test", "-c",
+                         "sleep 30", "--background")
+    job_id = submitted["job_id"]
+    _run_cli(daemon["env"], "job", "cancel", job_id)
+    waited = _run_cli(daemon["env"], "job", "wait", job_id)
+    assert waited["status"] in ("canceled", "cancelled", "done")
+    _run_cli(daemon["env"], "workspace", "delete", "cancel-test")
+
+
 def test_missing_env_var_fails_fast_before_daemon_call(daemon, tmp_path):
     cfg = tmp_path / "missing.yaml"
     cfg.write_text(
