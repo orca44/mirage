@@ -58,6 +58,29 @@ ws = Workspace({"/data": RAMResource()}, mode=MountMode.WRITE)
 await ws.execute("pwd")
 ```
 
+## Per-call subshell overrides
+
+A session is the persistent execution context. For one-shot commands that
+should run without disturbing that context, `execute()` accepts per-call `cwd`
+and `env` overrides. These run the command in an ephemeral session clone with
+bash subshell semantics: mutations like `cd` or `export` inside the call do
+not leak back.
+
+```python
+# Persistent mutation
+await ws.execute("export DEBUG=1")
+# DEBUG=1 is in the session's env
+
+# One-shot subshell
+await ws.execute("printenv FOO", env={"FOO": "bar"})
+# DEBUG=1 is still inherited; FOO does not appear in ws.env
+```
+
+This makes parallel calls safe. Two `execute()` calls with different `cwd`
+see their own cwd without cross-contamination, even on the same session.
+See [Workspace](/home/design/workspace#per-call-overrides-cwd-env) for the
+full API and the equivalent TypeScript shape.
+
 ## Lifecycle
 
 ```python

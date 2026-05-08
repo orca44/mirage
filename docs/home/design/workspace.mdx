@@ -73,7 +73,12 @@ at named prefixes.
 
 ## `execute()`
 
-```python
+`execute()` is the main entrypoint into the kernel. It parses the command,
+looks up the target session, resolves mounts, runs the shell executor, applies
+I/O side effects, and records history.
+
+<CodeGroup>
+```python Python
 async def execute(
     self,
     command: str,
@@ -82,12 +87,104 @@ async def execute(
     provision: bool = False,
     agent_id: str = DEFAULT_AGENT_ID,
     native: bool | None = None,
+    cwd: str | None = None,
+    env: dict[str, str] | None = None,
+    cancel: asyncio.Event | None = None,
 ):
 ```
 
-`execute()` is the main entrypoint into the kernel. It parses the command,
-looks up the target session, resolves mounts, runs the shell executor, applies
-I/O side effects, and records history.
+```typescript TypeScript
+interface ExecuteOptions {
+  stdin?: ByteSource | null
+  provision?: boolean
+  sessionId?: string
+  agentId?: string
+  native?: boolean
+  signal?: AbortSignal
+  noHistory?: boolean
+  cwd?: string
+  env?: Record<string, string>
+}
+
+async execute(command: string, options?: ExecuteOptions): Promise<ExecuteResult>
+```
+</CodeGroup>
+
+### Per-call overrides: `cwd`, `env`
+
+Providing `cwd` or `env` runs the command in an ephemeral session clone, like a
+bash subshell `(cd /data && cmd)`. Mutations like `cd` or `export` inside the
+call do NOT persist back to the workspace's session. To change persistent
+state, run the command without these options.
+
+<CodeGroup>
+```python Python
+# Persistent mutation (no options): like `cd /data; cmd`
+await ws.execute("cd /data")
+await ws.execute("ls")  # sees /data
+
+# One-shot subshell (with cwd): like `(cd /data && cmd)`
+await ws.execute("ls", cwd="/data")
+# ws.cwd is unchanged; mutations inside don't leak
+```
+
+```typescript TypeScript
+// Persistent mutation
+await ws.execute("cd /data")
+await ws.execute("ls")  // sees /data
+
+// One-shot subshell
+await ws.execute("ls", { cwd: "/data" })
+// ws.cwd is unchanged; mutations inside don't leak
+```
+</CodeGroup>
+
+This makes per-call overrides safe under concurrent calls on the same session.
+Two parallel `execute()` calls with different `cwd` see their own cwd without
+cross-contamination.
+
+### Mid-flight cancellation: `cancel` / `signal`
+
+Both bindings support cooperative cancellation observed at recursion boundaries
+(LIST, PIPELINE, FOR/WHILE/UNTIL iterations, COMMAND, subshells, command
+substitution) and inside `sleep`. On cancel, the call raises an abort error.
+
+<CodeGroup>
+```python Python
+import asyncio
+from mirage.workspace.abort import MirageAbortError
+
+cancel = asyncio.Event()
+
+async def trigger():
+    await asyncio.sleep(0.1)
+    cancel.set()
+
+asyncio.create_task(trigger())
+try:
+    await ws.execute("sleep 5", cancel=cancel)
+except MirageAbortError:
+    print("aborted")
+```
+
+```typescript TypeScript
+try {
+  await ws.execute("sleep 5", { signal: AbortSignal.timeout(100) })
+} catch (e) {
+  if (e instanceof DOMException && e.name === "AbortError") {
+    console.log("aborted")
+  }
+}
+```
+</CodeGroup>
+
+Three scopes are available for shaping where state lives:
+
+| Need | API | Bash equivalent |
+| --- | --- | --- |
+| One isolated command | `execute(cmd, cwd=..., env=...)` | `(cd /data && cmd)` |
+| Many isolated commands sharing scoped state | `session_id=...` (Py) / `sessionId` (TS) | a separate terminal |
+| Persistent shell mutations | run without options | `cd /data; cmd` |
 
 ## Persistence: save, load, copy
 
