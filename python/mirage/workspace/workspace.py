@@ -537,9 +537,6 @@ class Workspace:
                 **(env or {})
             },
             functions=dict(session.functions),
-            arrays=dict(session.arrays),
-            readonly_vars=set(session.readonly_vars),
-            shell_options=dict(session.shell_options),
         ) if use_override else session)
         self._current_agent_id = agent_id
         io = IOResult()
