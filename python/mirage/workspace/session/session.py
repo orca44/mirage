@@ -26,6 +26,9 @@ class Session:
     created_at: float = field(default_factory=time.time)
     functions: dict[str, object] = field(default_factory=dict)
     last_exit_code: int = 0
+    shell_options: dict[str, bool] = field(default_factory=dict)
+    readonly_vars: set[str] = field(default_factory=set)
+    arrays: dict[str, list[str]] = field(default_factory=dict)
     _stdin_buffer: AsyncLineIterator | None = field(default=None, repr=False)
 
     def to_dict(self) -> dict:

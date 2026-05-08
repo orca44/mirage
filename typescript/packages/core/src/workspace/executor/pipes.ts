@@ -17,7 +17,7 @@ import type { ByteSource } from '../../io/types.ts'
 import { IOResult, materialize } from '../../io/types.ts'
 import { applyBarrier, BarrierPolicy } from '../../shell/barrier.ts'
 import type { CallStack } from '../../shell/call_stack.ts'
-import { NodeType as NT } from '../../shell/types.ts'
+import { ERREXIT_EXEMPT_TYPES, NodeType as NT } from '../../shell/types.ts'
 import type { Session } from '../session/session.ts'
 import type { TSNodeLike } from '../expand/variable.ts'
 import { ExecutionNode } from '../types.ts'
@@ -67,6 +67,18 @@ export async function handlePipe(
 
   const lastIo = ios[ios.length - 1] ?? new IOResult()
   lastIo.syncExitCode()
+  if (session.shellOptions.pipefail === true) {
+    for (const io of ios) io.syncExitCode()
+    let rightmostFailure = 0
+    for (let k = ios.length - 1; k >= 0; k--) {
+      const code = ios[k]?.exitCode ?? 0
+      if (code !== 0) {
+        rightmostFailure = code
+        break
+      }
+    }
+    if (rightmostFailure !== 0) lastIo.exitCode = rightmostFailure
+  }
   const mergedStderrParts: Uint8Array[] = []
   const mergedReads: Record<string, ByteSource> = {}
   const mergedWrites: Record<string, ByteSource> = {}
@@ -172,6 +184,10 @@ export async function handleSubshell(
 ): Promise<Result> {
   const savedCwd = session.cwd
   const savedEnv = { ...session.env }
+  const savedOptions = { ...session.shellOptions }
+  const savedReadonly = new Set(session.readonlyVars)
+  const savedArrays: Record<string, string[]> = {}
+  for (const [k, v] of Object.entries(session.arrays)) savedArrays[k] = [...v]
   try {
     const allStdout: ByteSource[] = []
     let mergedIo = new IOResult()
@@ -181,6 +197,14 @@ export async function handleSubshell(
       if (stdout !== null) allStdout.push(stdout)
       mergedIo = await mergedIo.merge(io)
       lastExec = childExec
+      if (
+        io.exitCode !== 0 &&
+        session.shellOptions.errexit === true &&
+        !ERREXIT_EXEMPT_TYPES.has(child.type)
+      ) {
+        mergedIo.exitCode = io.exitCode
+        break
+      }
     }
     if (allStdout.length === 1 && allStdout[0] !== undefined) {
       return [allStdout[0], mergedIo, lastExec]
@@ -190,6 +214,9 @@ export async function handleSubshell(
   } finally {
     session.cwd = savedCwd
     session.env = savedEnv
+    session.shellOptions = savedOptions
+    session.readonlyVars = savedReadonly
+    session.arrays = savedArrays
   }
 }
 

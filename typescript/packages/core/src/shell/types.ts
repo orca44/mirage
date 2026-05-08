@@ -110,6 +110,18 @@ export const NodeType = Object.freeze({
 
 export type NodeType = (typeof NodeType)[keyof typeof NodeType]
 
+export const ERREXIT_EXEMPT_TYPES: ReadonlySet<string> = new Set<string>([
+  NodeType.LIST,
+  NodeType.NEGATED_COMMAND,
+])
+
+export const SET_FLAG_TO_OPTION: Readonly<Record<string, string>> = Object.freeze({
+  e: 'errexit',
+  u: 'nounset',
+  x: 'xtrace',
+  f: 'noglob',
+})
+
 export const RedirectKind = Object.freeze({
   STDOUT: 'stdout',
   STDERR: 'stderr',

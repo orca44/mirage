@@ -21,6 +21,7 @@ from mirage.io.stream import async_chain, materialize, wrap_cachable_streams
 from mirage.io.types import ByteSource
 from mirage.shell.call_stack import CallStack
 from mirage.shell.job_table import JobTable
+from mirage.shell.types import ERREXIT_EXEMPT_TYPES
 from mirage.types import PathSpec
 from mirage.workspace.executor.control import ReturnSignal
 from mirage.workspace.executor.cross_mount import (handle_cross_mount,
@@ -574,6 +575,10 @@ async def handle_command(
                 if stdout is not None:
                     all_stdout.append(stdout)
                 merged_io = await merged_io.merge(io)
+                if (io.exit_code != 0 and session.shell_options.get("errexit")
+                        and cmd.type not in ERREXIT_EXEMPT_TYPES):
+                    merged_io.exit_code = io.exit_code
+                    break
             combined = async_chain(*all_stdout) if all_stdout else None
             last_exec.exit_code = merged_io.exit_code
             return combined, merged_io, last_exec

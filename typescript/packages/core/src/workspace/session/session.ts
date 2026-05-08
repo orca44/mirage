@@ -22,6 +22,9 @@ export interface SessionInit {
   functions?: Record<string, unknown>
   lastExitCode?: number
   positionalArgs?: string[]
+  shellOptions?: Record<string, boolean>
+  readonlyVars?: Set<string>
+  arrays?: Record<string, string[]>
 }
 
 export class Session {
@@ -32,6 +35,9 @@ export class Session {
   functions: Record<string, unknown>
   lastExitCode: number
   positionalArgs: string[]
+  shellOptions: Record<string, boolean>
+  readonlyVars: Set<string>
+  arrays: Record<string, string[]>
   stdinBuffer: AsyncLineIterator | null = null
   localVars: Map<string, string | null> | null = null
 
@@ -43,6 +49,9 @@ export class Session {
     this.functions = init.functions ?? {}
     this.lastExitCode = init.lastExitCode ?? 0
     this.positionalArgs = init.positionalArgs ?? []
+    this.shellOptions = init.shellOptions ?? {}
+    this.readonlyVars = init.readonlyVars ?? new Set()
+    this.arrays = init.arrays ?? {}
   }
 
   toJSON(): Record<string, unknown> {

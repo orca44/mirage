@@ -32,6 +32,67 @@ def _has_at_expansion(node: tree_sitter.Node) -> bool:
     return False
 
 
+def _array_at_name(child: tree_sitter.Node) -> str | None:
+    if child.type != NT.EXPANSION:
+        return None
+    has_length_op = any(c.type == "#" and not c.is_named
+                        for c in child.children)
+    if has_length_op:
+        return None
+    sub = next((c for c in child.named_children if c.type == "subscript"),
+               None)
+    if sub is None:
+        return None
+    idx_text = ""
+    var_name = None
+    for sc in sub.named_children:
+        if sc.type == NT.VARIABLE_NAME:
+            var_name = sc.text.decode()
+        else:
+            idx_text = sc.text.decode()
+    if var_name and idx_text == "@":
+        return var_name
+    return None
+
+
+def _string_has_array_at(node: tree_sitter.Node) -> bool:
+    return any(_array_at_name(c) is not None for c in node.children)
+
+
+async def _expand_string_with_array(
+    node: tree_sitter.Node,
+    session: Session,
+    execute_fn: Callable,
+    call_stack: CallStack | None,
+) -> list[str]:
+    """Expand a string containing one or more "${a[@]}" into multiple words.
+
+    Bash semantics: "prefix${a[@]}suffix" with a=(1 2 3) produces three
+    words: "prefix1", "2", "3suffix". Single-element arrays merge prefix
+    and suffix into one word; empty arrays still produce prefix+suffix.
+    """
+    arrays = getattr(session, "arrays", {})
+    fragments: list[str] = [""]
+    for child in node.children:
+        if child.type == NT.DQUOTE:
+            continue
+        arr_name = _array_at_name(child)
+        if arr_name is not None:
+            arr = arrays.get(arr_name)
+            if not arr:
+                continue
+            if len(arr) == 1:
+                fragments[-1] = fragments[-1] + arr[0]
+            else:
+                fragments[-1] = fragments[-1] + arr[0]
+                fragments.extend(arr[1:-1])
+                fragments.append(arr[-1])
+            continue
+        text = await expand_node(child, session, execute_fn, call_stack)
+        fragments[-1] = fragments[-1] + text
+    return fragments
+
+
 def _get_positional_args(session: Session,
                          call_stack: CallStack | None) -> list[str]:
     if call_stack and call_stack.get_all_positional():
@@ -59,6 +120,11 @@ async def expand_parts(
             if positional:
                 result.extend(positional)
                 continue
+        if p.type == NT.STRING and _string_has_array_at(p):
+            words = await _expand_string_with_array(p, session, execute_fn,
+                                                    call_stack)
+            result.extend(words)
+            continue
         expanded = await expand_node(p, session, execute_fn, call_stack)
         if p.type == NT.COMMAND_SUBSTITUTION:
             for word in expanded.split():

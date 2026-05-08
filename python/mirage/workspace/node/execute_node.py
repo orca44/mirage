@@ -21,6 +21,7 @@ from mirage.io import IOResult
 from mirage.io.stream import async_chain, materialize
 from mirage.shell.call_stack import CallStack
 from mirage.shell.job_table import JobTable
+from mirage.shell.types import ERREXIT_EXEMPT_TYPES
 from mirage.shell.types import NodeType as NT
 from mirage.shell.types import Redirect, RedirectKind
 from mirage.shell.types import ShellBuiltin as SB
@@ -54,8 +55,9 @@ from mirage.shell.helpers import (  # isort: skip
 from mirage.workspace.executor.builtins import (  # isort: skip
     handle_bash, handle_cd, handle_echo, handle_eval, handle_export,
     handle_local, handle_man, handle_printenv, handle_printf, handle_python,
-    handle_read, handle_return, handle_set, handle_shift, handle_sleep,
-    handle_source, handle_test, handle_trap, handle_unset, handle_whoami)
+    handle_read, handle_readonly, handle_return, handle_set, handle_shift,
+    handle_sleep, handle_source, handle_test, handle_trap, handle_unset,
+    handle_whoami)
 
 
 async def execute_node(
@@ -205,6 +207,10 @@ async def execute_node(
             if stdout is not None:
                 all_stdout.append(stdout)
             merged_io = await merged_io.merge(io)
+            if (io.exit_code != 0 and session.shell_options.get("errexit")
+                    and child.type not in ERREXIT_EXEMPT_TYPES):
+                merged_io.exit_code = io.exit_code
+                break
         if len(all_stdout) == 1:
             return all_stdout[0], merged_io, last_exec
         combined = async_chain(*all_stdout) if all_stdout else None
@@ -251,21 +257,40 @@ async def execute_node(
         return None, IOResult(), ExecutionNode(command=f"function {name}",
                                                exit_code=0)
 
-    # ── declaration (export/local/declare) ──────
+    # ── declaration (export/local/declare/readonly) ──
     if ntype == NT.DECLARATION_COMMAND:
         keyword = get_declaration_keyword(node)
         assignments = []
+        flag_chars: set[str] = set()
         for child in node.named_children:
             if child.type == NT.VARIABLE_ASSIGNMENT:
+                val_nodes = [
+                    c for c in child.named_children
+                    if c.type != NT.VARIABLE_NAME
+                ]
+                if val_nodes and val_nodes[0].type == NT.ARRAY:
+                    key = get_text(child).partition("=")[0]
+                    items = [
+                        await expand_node(ac, session, execute_fn, cs)
+                        for ac in val_nodes[0].named_children
+                    ]
+                    session.arrays[key] = items
+                    continue
                 expanded = await expand_node(child, session, execute_fn, cs)
                 assignments.append(expanded)
             elif child.type in (NT.SIMPLE_EXPANSION, NT.EXPANSION,
                                 NT.CONCATENATION, NT.WORD):
                 expanded = await expand_node(child, session, execute_fn, cs)
-                if expanded:
+                if not expanded:
+                    continue
+                if expanded.startswith("-") and len(expanded) > 1:
+                    flag_chars.update(expanded[1:])
+                else:
                     assignments.append(expanded)
         if keyword == NT.LOCAL:
             return await handle_local(assignments, session)
+        if keyword == "readonly" or "r" in flag_chars:
+            return await handle_readonly(assignments, session)
         return await handle_export(assignments, session)
 
     # ── unset ───────────────────────────────────
@@ -298,12 +323,28 @@ async def execute_node(
         text = get_text(node)
         if "=" in text:
             key, _, val = text.partition("=")
+            if key in session.readonly_vars:
+                err = f"bash: {key}: readonly variable\n".encode()
+                return None, IOResult(exit_code=1,
+                                      stderr=err), ExecutionNode(command=text,
+                                                                 exit_code=1,
+                                                                 stderr=err)
             val_nodes = [
                 c for c in node.named_children if c.type != NT.VARIABLE_NAME
             ]
+            if val_nodes and val_nodes[0].type == NT.ARRAY:
+                items = []
+                for ac in val_nodes[0].named_children:
+                    items.append(await expand_node(ac, session, execute_fn,
+                                                   cs))
+                session.arrays[key] = items
+                session.env.pop(key, None)
+                return None, IOResult(), ExecutionNode(command=text,
+                                                       exit_code=0)
             if val_nodes:
                 val = await expand_node(val_nodes[0], session, execute_fn, cs)
             session.env[key] = val
+            session.arrays.pop(key, None)
         return None, IOResult(), ExecutionNode(command=text, exit_code=0)
 
     raise TypeError(f"unsupported tree-sitter node type: {ntype}")
@@ -492,6 +533,11 @@ async def _execute_program(
             all_stdout.append(stdout)
         merged_io = await merged_io.merge(io)
 
+        if (io.exit_code != 0 and session.shell_options.get("errexit")
+                and not is_bg and child.type not in ERREXIT_EXEMPT_TYPES):
+            merged_io.exit_code = io.exit_code
+            break
+
     if len(all_stdout) == 1:
         return all_stdout[0], merged_io, last_exec
     combined = async_chain(*all_stdout) if all_stdout else None
@@ -515,6 +561,79 @@ async def _execute_command(
     name = get_command_name(node)
     parts = get_parts(node)
 
+    prefix_assignments: list[tuple[str, str]] = []
+    non_prefix_parts = []
+    saw_command_name = False
+    for p in parts:
+        if not saw_command_name and p.type == NT.VARIABLE_ASSIGNMENT:
+            atext = get_text(p)
+            if "=" in atext:
+                key, _, raw_val = atext.partition("=")
+                val_nodes = [
+                    c for c in p.named_children if c.type != NT.VARIABLE_NAME
+                ]
+                if val_nodes:
+                    v = await expand_node(val_nodes[0], session, execute_fn,
+                                          call_stack)
+                else:
+                    v = raw_val
+                prefix_assignments.append((key, v))
+            continue
+        if p.type == NT.COMMAND_NAME:
+            saw_command_name = True
+        non_prefix_parts.append(p)
+    parts = non_prefix_parts
+
+    for k, _ in prefix_assignments:
+        if k in session.readonly_vars:
+            err = f"bash: {k}: readonly variable\n".encode()
+            return None, IOResult(exit_code=1,
+                                  stderr=err), ExecutionNode(command=name or k,
+                                                             exit_code=1,
+                                                             stderr=err)
+
+    if prefix_assignments and not name:
+        for k, v in prefix_assignments:
+            session.env[k] = v
+        return None, IOResult(), ExecutionNode(command=" ".join(
+            f"{k}={v}" for k, v in prefix_assignments),
+                                               exit_code=0)
+
+    is_function_call = name in session.functions
+    saved_env_overrides: dict[str, str | None] = {}
+    for k, v in prefix_assignments:
+        if not is_function_call:
+            saved_env_overrides[k] = session.env.get(k)
+        session.env[k] = v
+
+    try:
+        return await _dispatch_command_body(recurse, dispatch, registry,
+                                            execute_fn, node, parts, name,
+                                            session, stdin, call_stack,
+                                            job_table, history, cancel)
+    finally:
+        for k, prev in saved_env_overrides.items():
+            if prev is None:
+                session.env.pop(k, None)
+            else:
+                session.env[k] = prev
+
+
+async def _dispatch_command_body(
+    recurse,
+    dispatch,
+    registry,
+    execute_fn,
+    node,
+    parts,
+    name,
+    session,
+    stdin,
+    call_stack,
+    job_table,
+    history: object = None,
+    cancel: asyncio.Event | None = None,
+) -> tuple[Any, IOResult, ExecutionNode]:
     for child in node.named_children:
         if child.type == NT.HERESTRING_REDIRECT:
             for sc in child.named_children:

@@ -19,6 +19,7 @@ from mirage.io.stream import async_chain, close_quietly, merge_stdout_stderr
 from mirage.io.types import ByteSource, materialize
 from mirage.shell.barrier import BarrierPolicy, apply_barrier
 from mirage.shell.call_stack import CallStack
+from mirage.shell.types import ERREXIT_EXEMPT_TYPES
 from mirage.shell.types import NodeType as NT
 from mirage.workspace.session import Session
 from mirage.workspace.types import ExecutionNode
@@ -70,6 +71,13 @@ async def handle_pipe(
 
     last_io = ios[-1]
     last_io.sync_exit_code()
+    if session.shell_options.get("pipefail"):
+        for io in ios:
+            io.sync_exit_code()
+        rightmost_failure = next(
+            (io.exit_code for io in reversed(ios) if io.exit_code != 0), 0)
+        if rightmost_failure != 0:
+            last_io.exit_code = rightmost_failure
     merged_stderr_parts: list[bytes] = []
     merged_reads: dict[str, ByteSource] = {}
     merged_writes: dict[str, ByteSource] = {}
@@ -171,6 +179,9 @@ async def handle_subshell(
     """Execute body in isolated env."""
     saved_cwd = session.cwd
     saved_env = dict(session.env)
+    saved_options = dict(session.shell_options)
+    saved_readonly = set(session.readonly_vars)
+    saved_arrays = {k: list(v) for k, v in session.arrays.items()}
     try:
         all_stdout: list = []
         merged_io = IOResult()
@@ -181,6 +192,10 @@ async def handle_subshell(
             if stdout is not None:
                 all_stdout.append(stdout)
             merged_io = await merged_io.merge(io)
+            if (io.exit_code != 0 and session.shell_options.get("errexit")
+                    and child.type not in ERREXIT_EXEMPT_TYPES):
+                merged_io.exit_code = io.exit_code
+                break
         if len(all_stdout) == 1:
             return all_stdout[0], merged_io, last_exec
         combined = async_chain(*all_stdout) if all_stdout else None
@@ -188,3 +203,6 @@ async def handle_subshell(
     finally:
         session.cwd = saved_cwd
         session.env = saved_env
+        session.shell_options = saved_options
+        session.readonly_vars = saved_readonly
+        session.arrays = saved_arrays

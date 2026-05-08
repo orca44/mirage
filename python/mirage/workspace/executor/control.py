@@ -23,6 +23,7 @@ from mirage.io.stream import async_chain
 from mirage.io.types import ByteSource
 from mirage.shell.barrier import BarrierPolicy, apply_barrier
 from mirage.shell.call_stack import CallStack
+from mirage.shell.types import ERREXIT_EXEMPT_TYPES
 from mirage.types import PathSpec
 from mirage.workspace.session import Session
 from mirage.workspace.types import ExecutionNode
@@ -76,6 +77,10 @@ async def _execute_body(
             raise ContinueSignal(stdout=combined, io=merged_io)
         all_stdout.append(stdout)
         merged_io = await merged_io.merge(io)
+        if (io.exit_code != 0 and session.shell_options.get("errexit")
+                and cmd.type not in ERREXIT_EXEMPT_TYPES):
+            merged_io.exit_code = io.exit_code
+            break
     non_empty = [s for s in all_stdout if s is not None]
     combined = async_chain(*non_empty) if non_empty else None
     return combined, merged_io, last_exec

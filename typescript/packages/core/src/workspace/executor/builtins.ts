@@ -23,6 +23,7 @@ import type { IOResult as IOResultType } from '../../io/types.ts'
 import { IOResult, materialize } from '../../io/types.ts'
 import type { ByteSource } from '../../io/types.ts'
 import type { CallStack } from '../../shell/call_stack.ts'
+import { SET_FLAG_TO_OPTION } from '../../shell/types.ts'
 import { FileType, PathSpec } from '../../types.ts'
 import type { Mount } from '../mount/mount.ts'
 import { DEV_PREFIX, type MountRegistry } from '../mount/registry.ts'
@@ -103,6 +104,14 @@ export function handleExport(assignments: string[], session: Session): Result {
     const eq = assign.indexOf('=')
     if (eq >= 0) {
       const key = assign.slice(0, eq)
+      if (session.readonlyVars.has(key)) {
+        const err = new TextEncoder().encode(`bash: ${key}: readonly variable\n`)
+        return [
+          null,
+          new IOResult({ exitCode: 1, stderr: err }),
+          new ExecutionNode({ command: 'export', exitCode: 1, stderr: err }),
+        ]
+      }
       session.env[key] = assign.slice(eq + 1)
     } else if (!(assign in session.env)) {
       session.env[assign] = ''
@@ -111,8 +120,40 @@ export function handleExport(assignments: string[], session: Session): Result {
   return [null, new IOResult(), new ExecutionNode({ command: 'export', exitCode: 0 })]
 }
 
+export function handleReadonly(assignments: string[], session: Session): Result {
+  for (const assign of assignments) {
+    const eq = assign.indexOf('=')
+    if (eq >= 0) {
+      const key = assign.slice(0, eq)
+      if (session.readonlyVars.has(key)) {
+        const err = new TextEncoder().encode(`bash: ${key}: readonly variable\n`)
+        return [
+          null,
+          new IOResult({ exitCode: 1, stderr: err }),
+          new ExecutionNode({ command: 'readonly', exitCode: 1, stderr: err }),
+        ]
+      }
+      session.env[key] = assign.slice(eq + 1)
+      session.readonlyVars.add(key)
+    } else {
+      session.readonlyVars.add(assign)
+    }
+  }
+  return [null, new IOResult(), new ExecutionNode({ command: 'readonly', exitCode: 0 })]
+}
+
 export function handleUnset(names: string[], session: Session): Result {
   for (const name of names) {
+    if (session.readonlyVars.has(name)) {
+      const err = new TextEncoder().encode(
+        `bash: unset: ${name}: cannot unset: readonly variable\n`,
+      )
+      return [
+        null,
+        new IOResult({ exitCode: 1, stderr: err }),
+        new ExecutionNode({ command: 'unset', exitCode: 1, stderr: err }),
+      ]
+    }
     // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
     delete session.env[name]
   }
@@ -535,8 +576,34 @@ export function handleSet(
     const out = new TextEncoder().encode(`${lines.join('\n')}\n`)
     return [out, new IOResult(), new ExecutionNode({ command: 'set', exitCode: 0 })]
   }
-  if (args[0] === '--') {
-    session.positionalArgs = args.slice(1)
+  let i = 0
+  while (i < args.length) {
+    const tok = args[i] ?? ''
+    if (tok === '--') {
+      session.positionalArgs = args.slice(i + 1)
+      return [null, new IOResult(), new ExecutionNode({ command: 'set', exitCode: 0 })]
+    }
+    if (tok === '-o' || tok === '+o') {
+      if (i + 1 < args.length) {
+        const optName = args[i + 1] ?? ''
+        session.shellOptions[optName] = tok === '-o'
+        i += 2
+        continue
+      }
+      i += 1
+      continue
+    }
+    if ((tok.startsWith('-') || tok.startsWith('+')) && tok.length > 1) {
+      const enable = tok.startsWith('-')
+      for (const ch of tok.slice(1)) {
+        const opt = SET_FLAG_TO_OPTION[ch]
+        if (opt !== undefined) session.shellOptions[opt] = enable
+      }
+      i += 1
+      continue
+    }
+    session.positionalArgs = args.slice(i)
+    break
   }
   return [null, new IOResult(), new ExecutionNode({ command: 'set', exitCode: 0 })]
 }
@@ -620,23 +687,42 @@ export async function handleRead(
       new ExecutionNode({ command: 'read', exitCode: 1 }),
     ]
   }
-  const line = new TextDecoder().decode(lineBytes)
-  if (variables.length <= 1) {
-    if (variables.length === 1) {
-      const v = variables[0]
-      if (v !== undefined) session.env[v] = line
+  const line = new TextDecoder().decode(lineBytes).replace(/\n+$/, '')
+  const ifs = session.env.IFS ?? ' \t\n'
+  let parts: string[]
+  if (ifs === ' \t\n') {
+    if (variables.length === 0) {
+      parts = []
+    } else if (variables.length === 1) {
+      parts = [line]
+    } else {
+      const split = line.split(/\s+/).filter((p) => p !== '')
+      const head = split.slice(0, variables.length - 1)
+      const tail = split.slice(variables.length - 1).join(' ')
+      parts = tail !== '' ? [...head, tail] : head
     }
+  } else if (ifs === '') {
+    parts = [line]
   } else {
-    const parts = line.split(/\s+/).filter((p) => p !== '')
-    for (let i = 0; i < variables.length; i++) {
-      const name = variables[i]
-      if (name === undefined) continue
-      if (i === variables.length - 1) {
-        session.env[name] = parts.slice(i).join(' ')
-      } else {
-        session.env[name] = parts[i] ?? ''
+    const nSplits = Math.max(0, variables.length - 1)
+    const chars = new Set(ifs.split(''))
+    const out: string[] = []
+    let cur = ''
+    for (const ch of line) {
+      if (chars.has(ch) && out.length < nSplits) {
+        out.push(cur)
+        cur = ''
+        continue
       }
+      cur += ch
     }
+    out.push(cur)
+    parts = out
+  }
+  for (let i = 0; i < variables.length; i++) {
+    const name = variables[i]
+    if (name === undefined) continue
+    session.env[name] = parts[i] ?? ''
   }
   return [null, new IOResult(), new ExecutionNode({ command: 'read', exitCode: 0 })]
 }

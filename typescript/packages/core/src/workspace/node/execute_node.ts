@@ -42,6 +42,7 @@ import {
 import type { PyodideRuntime } from '../executor/python/runtime.ts'
 import type { JobTable } from '../../shell/job_table.ts'
 import {
+  ERREXIT_EXEMPT_TYPES,
   NodeType as NT,
   Redirect,
   RedirectKind as Redirect_,
@@ -76,6 +77,7 @@ import {
   handlePrintenv,
   handlePrintf,
   handleRead,
+  handleReadonly,
   handleReturn,
   handleSet,
   handleShift,
@@ -258,6 +260,14 @@ export async function executeNode(
       lastExec = execNode
       if (stdout !== null) allStdout.push(stdout)
       mergedIo = await mergedIo.merge(io)
+      if (
+        io.exitCode !== 0 &&
+        session.shellOptions.errexit === true &&
+        !ERREXIT_EXEMPT_TYPES.has(child.type)
+      ) {
+        mergedIo.exitCode = io.exitCode
+        break
+      }
     }
     if (allStdout.length === 1 && allStdout[0] !== undefined) {
       return [allStdout[0], mergedIo, lastExec]
@@ -313,8 +323,22 @@ export async function executeNode(
   if (ntype === NT.DECLARATION_COMMAND) {
     const keyword = getDeclarationKeyword(node)
     const assignments: string[] = []
+    const flagChars = new Set<string>()
     for (const child of node.namedChildren) {
       if (child.type === NT.VARIABLE_ASSIGNMENT) {
+        const valNodes = child.namedChildren.filter((c) => c.type !== NT.VARIABLE_NAME)
+        const firstVal = valNodes[0]
+        if (firstVal?.type === NT.ARRAY) {
+          const text = getText(child)
+          const eq = text.indexOf('=')
+          const key = eq >= 0 ? text.slice(0, eq) : text
+          const items: string[] = []
+          for (const ac of firstVal.namedChildren) {
+            items.push(await expandNode(ac, session, executeFn, callStack))
+          }
+          session.arrays[key] = items
+          continue
+        }
         assignments.push(await expandNode(child, session, executeFn, callStack))
       } else if (
         child.type === NT.SIMPLE_EXPANSION ||
@@ -323,10 +347,18 @@ export async function executeNode(
         child.type === NT.WORD
       ) {
         const expanded = await expandNode(child, session, executeFn, callStack)
-        if (expanded !== '') assignments.push(expanded)
+        if (expanded === '') continue
+        if (expanded.startsWith('-') && expanded.length > 1) {
+          for (const ch of expanded.slice(1)) flagChars.add(ch)
+        } else {
+          assignments.push(expanded)
+        }
       }
     }
     if (keyword === NT.LOCAL) return handleLocal(assignments, session)
+    if (keyword === 'readonly' || flagChars.has('r')) {
+      return handleReadonly(assignments, session)
+    }
     return handleExport(assignments, session)
   }
 
@@ -359,11 +391,32 @@ export async function executeNode(
       const eq = text.indexOf('=')
       const key = text.slice(0, eq)
       let val = text.slice(eq + 1)
+      if (session.readonlyVars.has(key)) {
+        const err = new TextEncoder().encode(`bash: ${key}: readonly variable\n`)
+        return [
+          null,
+          new IOResult({ exitCode: 1, stderr: err }),
+          new ExecutionNode({ command: text, exitCode: 1, stderr: err }),
+        ]
+      }
       const valNodes = node.namedChildren.filter((c) => c.type !== NT.VARIABLE_NAME)
-      if (valNodes.length > 0 && valNodes[0] !== undefined) {
-        val = await expandNode(valNodes[0], session, executeFn, callStack)
+      const firstVal = valNodes[0]
+      if (firstVal?.type === NT.ARRAY) {
+        const items: string[] = []
+        for (const ac of firstVal.namedChildren) {
+          items.push(await expandNode(ac, session, executeFn, callStack))
+        }
+        session.arrays[key] = items
+        // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+        delete session.env[key]
+        return [null, new IOResult(), new ExecutionNode({ command: text, exitCode: 0 })]
+      }
+      if (firstVal !== undefined) {
+        val = await expandNode(firstVal, session, executeFn, callStack)
       }
       session.env[key] = val
+      // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+      delete session.arrays[key]
     }
     return [null, new IOResult(), new ExecutionNode({ command: text, exitCode: 0 })]
   }
@@ -434,6 +487,16 @@ async function executeProgram(
 
     if (stdout !== null) allStdout.push(stdout)
     mergedIo = await mergedIo.merge(io)
+
+    if (
+      io.exitCode !== 0 &&
+      session.shellOptions.errexit === true &&
+      !isBg &&
+      !ERREXIT_EXEMPT_TYPES.has(child.type)
+    ) {
+      mergedIo.exitCode = io.exitCode
+      break
+    }
   }
 
   if (allStdout.length === 1 && allStdout[0] !== undefined) {
@@ -465,7 +528,110 @@ async function executeCommand(
   signal?: AbortSignal,
 ): Promise<Result> {
   const name = getCommandName(node)
-  const parts = getParts(node)
+  const rawParts = getParts(node)
+
+  const prefixAssignments: [string, string][] = []
+  const nonPrefixParts: TSNodeLike[] = []
+  let sawCommandName = false
+  for (const p of rawParts) {
+    if (!sawCommandName && p.type === NT.VARIABLE_ASSIGNMENT) {
+      const atext = getText(p)
+      const eq = atext.indexOf('=')
+      if (eq >= 0) {
+        const key = atext.slice(0, eq)
+        const rawVal = atext.slice(eq + 1)
+        const valNodes = p.namedChildren.filter((c) => c.type !== NT.VARIABLE_NAME)
+        const firstVal = valNodes[0]
+        const v =
+          firstVal !== undefined
+            ? await expandNode(firstVal, session, executeFn, callStack)
+            : rawVal
+        prefixAssignments.push([key, v])
+      }
+      continue
+    }
+    if (p.type === NT.COMMAND_NAME) sawCommandName = true
+    nonPrefixParts.push(p)
+  }
+
+  for (const [k] of prefixAssignments) {
+    if (session.readonlyVars.has(k)) {
+      const err = new TextEncoder().encode(`bash: ${k}: readonly variable\n`)
+      return [
+        null,
+        new IOResult({ exitCode: 1, stderr: err }),
+        new ExecutionNode({ command: name !== '' ? name : k, exitCode: 1, stderr: err }),
+      ]
+    }
+  }
+
+  if (prefixAssignments.length > 0 && name === '') {
+    for (const [k, v] of prefixAssignments) session.env[k] = v
+    const cmdLabel = prefixAssignments.map(([k, v]) => `${k}=${v}`).join(' ')
+    return [null, new IOResult(), new ExecutionNode({ command: cmdLabel, exitCode: 0 })]
+  }
+
+  const isFunctionCall = name !== '' && session.functions[name] !== undefined
+  const savedEnvOverrides: Record<string, string | null> = {}
+  for (const [k, v] of prefixAssignments) {
+    if (!isFunctionCall) savedEnvOverrides[k] = k in session.env ? (session.env[k] ?? null) : null
+    session.env[k] = v
+  }
+
+  try {
+    return await runCommandBody(
+      recurse,
+      dispatch,
+      registry,
+      executeFn,
+      node,
+      nonPrefixParts,
+      name,
+      session,
+      stdinIn,
+      callStack,
+      jobTable,
+      ensureOpen,
+      unmount,
+      pythonRuntime,
+      history,
+      signal,
+    )
+  } finally {
+    for (const [k, prev] of Object.entries(savedEnvOverrides)) {
+      if (prev === null) {
+        // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+        delete session.env[k]
+      } else {
+        session.env[k] = prev
+      }
+    }
+  }
+}
+
+async function runCommandBody(
+  recurse: (
+    n: TSNodeLike,
+    s: Session,
+    i: ByteSource | null,
+    cs: CallStack | null,
+  ) => Promise<Result>,
+  dispatch: DispatchFn,
+  registry: MountRegistry,
+  executeFn: ExecuteFn,
+  node: TSNodeLike,
+  parts: TSNodeLike[],
+  name: string,
+  session: Session,
+  stdinIn: ByteSource | null,
+  callStack: CallStack | null,
+  jobTable: JobTable | null,
+  ensureOpen?: (resource: Resource) => Promise<void>,
+  unmount?: (prefix: string) => Promise<void>,
+  pythonRuntime?: PyodideRuntime,
+  history?: CommandHistory,
+  signal?: AbortSignal,
+): Promise<Result> {
   let stdin = stdinIn
 
   for (const child of node.namedChildren) {

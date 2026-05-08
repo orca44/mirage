@@ -114,6 +114,19 @@ class NodeType(StrEnum):
     ERROR = "ERROR"
 
 
+ERREXIT_EXEMPT_TYPES = frozenset({
+    NodeType.LIST,
+    NodeType.NEGATED_COMMAND,
+})
+
+SET_FLAG_TO_OPTION = {
+    "e": "errexit",
+    "u": "nounset",
+    "x": "xtrace",
+    "f": "noglob",
+}
+
+
 class RedirectKind(StrEnum):
     STDOUT = "stdout"
     STDERR = "stderr"

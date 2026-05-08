@@ -18,6 +18,7 @@ import type { ByteSource } from '../../io/types.ts'
 import { IOResult } from '../../io/types.ts'
 import { applyBarrier, BarrierPolicy } from '../../shell/barrier.ts'
 import type { CallStack } from '../../shell/call_stack.ts'
+import { ERREXIT_EXEMPT_TYPES } from '../../shell/types.ts'
 import { PathSpec } from '../../types.ts'
 import type { TSNodeLike } from '../expand/variable.ts'
 import type { Session } from '../session/session.ts'
@@ -79,6 +80,14 @@ async function executeBody(
       lastExec = execNode
       allStdout.push(stdout)
       mergedIo = await mergedIo.merge(io)
+      if (
+        io.exitCode !== 0 &&
+        session.shellOptions.errexit === true &&
+        !ERREXIT_EXEMPT_TYPES.has(cmd.type)
+      ) {
+        mergedIo.exitCode = io.exitCode
+        break
+      }
     } catch (sig) {
       if (sig instanceof BreakSignal) {
         if (sig.stdout !== null) allStdout.push(sig.stdout)

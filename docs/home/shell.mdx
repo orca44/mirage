@@ -143,27 +143,6 @@ Both bindings support cooperative cancellation observed at recursion boundaries 
 | Many isolated commands sharing scoped state | `session_id=...` (Py) / `sessionId` (TS) | a separate terminal |
 | Persistent shell mutations | run without options | `cd /data; cmd` |
 
-## Limitations
-
-### `FOO=bar cmd` prefix is silently broken
-
-The standard bash inline-assignment prefix (`FOO=bar cmd`) does NOT work in Mirage's executor. Both Python and TypeScript bindings are affected — this is in the shared shell parser, not the language runtime.
-
-```bash
-# These look like bash but produce wrong results:
-FOO=bar printenv FOO        # exit 1, stdout empty (FOO=bar leaked into argv)
-FOO=bar echo "$FOO"          # prints empty (FOO=bar treated as command name)
-env FOO=bar printenv FOO    # exit 127 ("env: command not found"; no env builtin)
-```
-
-The parser treats leading `VARIABLE_ASSIGNMENT` nodes as part of argv instead of stripping them into the command's environment, and there is no `env` builtin to fall back on.
-
-**Workarounds, in order of preference:**
-
-1. **From the SDK:** use the per-call `env` parameter on `execute()`. Both bindings expose it the same way (TS as an options field, Python as a keyword argument). This is the structured, race-free path and the recommended approach for harnesses.
-2. **From a shell command string:** use a subshell `(export FOO=bar; cmd)`. The export is scoped to the subshell and does not leak to the parent session. This works in both `ws.execute('(export FOO=bar; cmd)')` and `mirage execute -c "(export FOO=bar; cmd)"`.
-3. **Mutate the session:** `ws.execute('export FOO=bar')` followed by `ws.execute('cmd')` if persistence is what you want.
-
 ## Agent Pattern
 
 Agent harnesses commonly fan out tool calls in parallel, each with its own `cwd`/`env`/`cancel`. The clone semantics make this race-free without per-call boilerplate.
