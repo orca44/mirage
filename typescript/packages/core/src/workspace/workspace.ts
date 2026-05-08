@@ -180,6 +180,15 @@ export interface ExecuteOptions {
    * `ws.execute('cd <path>')` without this option.
    */
   cwd?: string
+  /**
+   * Per-call environment variable overrides, layered on top of the
+   * session's env. Providing this runs the command in an isolated session,
+   * like `env FOO=bar cmd` or `(export FOO=bar; cmd)`. Mutations
+   * (export) inside the call do NOT persist back to the workspace's
+   * session. To change the persistent env, assign `ws.env` directly or run
+   * `ws.execute('export FOO=bar')` without this option.
+   */
+  env?: Record<string, string>
 }
 
 const HELP_HINT =
@@ -610,12 +619,12 @@ export class Workspace {
     }
     const targetSessionId = options.sessionId ?? this.sessionManager.defaultId
     const targetSession = this.sessionManager.get(targetSessionId)
-    const useOverride = options.cwd !== undefined
+    const useOverride = options.cwd !== undefined || options.env !== undefined
     const effectiveSession = useOverride
       ? new Session({
           sessionId: targetSession.sessionId,
           cwd: options.cwd ?? targetSession.cwd,
-          env: { ...targetSession.env },
+          env: { ...targetSession.env, ...(options.env ?? {}) },
           createdAt: targetSession.createdAt,
           functions: { ...targetSession.functions },
           lastExitCode: targetSession.lastExitCode,
