@@ -141,3 +141,103 @@ async def test_env_parallel_isolation():
     )
     assert (await r1.stdout_str()).strip() == "one"
     assert (await r2.stdout_str()).strip() == "two"
+
+
+# ── mid-flight cancel ─────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_cancel_pre_set_raises_immediately():
+    ws = _make_ws()
+    cancel = asyncio.Event()
+    cancel.set()
+    with pytest.raises(Exception) as exc_info:
+        await ws.execute("echo hi", cancel=cancel)
+    assert "abort" in str(exc_info.value).lower()
+
+
+@pytest.mark.asyncio
+async def test_cancel_aborts_sleep_within_timeout():
+    ws = _make_ws()
+    cancel = asyncio.Event()
+
+    async def trigger() -> None:
+        await asyncio.sleep(0.1)
+        cancel.set()
+
+    asyncio.create_task(trigger())
+    t0 = asyncio.get_event_loop().time()
+    with pytest.raises(Exception):
+        await ws.execute("sleep 5", cancel=cancel)
+    assert asyncio.get_event_loop().time() - t0 < 1.0
+
+
+@pytest.mark.asyncio
+async def test_cancel_inside_for_loop():
+    ws = _make_ws()
+    cancel = asyncio.Event()
+
+    async def trigger() -> None:
+        await asyncio.sleep(0.1)
+        cancel.set()
+
+    asyncio.create_task(trigger())
+    t0 = asyncio.get_event_loop().time()
+    with pytest.raises(Exception):
+        await ws.execute(
+            "for i in 1 2 3 4 5 6 7 8 9 10; do sleep 1; done",
+            cancel=cancel,
+        )
+    assert asyncio.get_event_loop().time() - t0 < 1.5
+
+
+@pytest.mark.asyncio
+async def test_cancel_between_list_stages():
+    ws = _make_ws()
+    cancel = asyncio.Event()
+
+    async def trigger() -> None:
+        await asyncio.sleep(0.1)
+        cancel.set()
+
+    asyncio.create_task(trigger())
+    t0 = asyncio.get_event_loop().time()
+    with pytest.raises(Exception):
+        await ws.execute(
+            "sleep 1 && sleep 1 && sleep 1 && echo done",
+            cancel=cancel,
+        )
+    assert asyncio.get_event_loop().time() - t0 < 2.0
+
+
+@pytest.mark.asyncio
+async def test_cancel_inside_command_substitution():
+    ws = _make_ws()
+    cancel = asyncio.Event()
+
+    async def trigger() -> None:
+        await asyncio.sleep(0.1)
+        cancel.set()
+
+    asyncio.create_task(trigger())
+    t0 = asyncio.get_event_loop().time()
+    with pytest.raises(Exception):
+        await ws.execute('echo "$(sleep 5)"', cancel=cancel)
+    assert asyncio.get_event_loop().time() - t0 < 1.0
+
+
+@pytest.mark.asyncio
+async def test_cancel_workspace_remains_usable():
+    ws = _make_ws()
+    cancel = asyncio.Event()
+
+    async def trigger() -> None:
+        await asyncio.sleep(0.05)
+        cancel.set()
+
+    asyncio.create_task(trigger())
+    with pytest.raises(Exception):
+        await ws.execute("sleep 5", cancel=cancel)
+    r = await ws.execute("echo recovered")
+    assert r.exit_code == 0
+    assert r.stdout.decode().strip() == "recovered"
