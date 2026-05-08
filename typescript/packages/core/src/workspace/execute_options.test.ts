@@ -131,10 +131,12 @@ describe('execute({ env }): bash subshell semantics', () => {
 
   it('layers onto, does not replace, session env', async () => {
     const ws = await makeWs()
-    ws.env = { BASE: 'keep' }
+    await ws.execute('export BASE=keep')
     const r = await ws.execute('printenv BASE; printenv FOO', { env: { FOO: 'bar' } })
     expect(stdoutStr(r)).toContain('keep')
     expect(stdoutStr(r)).toContain('bar')
+    expect(ws.env.BASE).toBe('keep')
+    expect(ws.env.FOO).toBeUndefined()
     await ws.close()
   })
 
