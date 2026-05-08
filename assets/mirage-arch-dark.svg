@@ -28,7 +28,7 @@
     <line x1="80" y1="80" x2="80" y2="115" stroke="#000000" stroke-width="2.5"/>
   </svg>
   <text x="515" y="84" fill="#FFFFFF" font-family="Avenir Next, Helvetica Neue, Arial, sans-serif" font-size="72" font-weight="700" letter-spacing="-1">mirage</text>
-  <text x="600" y="140" text-anchor="middle" fill="#FFFFFF" font-family="Avenir Next, Helvetica Neue, Arial, sans-serif" font-size="22" font-weight="500" letter-spacing="0.4">A Unified Virtual File System for AI Agents</text>
+  <text x="600" y="140" text-anchor="middle" fill="#FFFFFF" font-family="Avenir Next, Helvetica Neue, Arial, sans-serif" font-size="22" font-weight="500" letter-spacing="0.4">A Unified Virtual Filesystem for AI Agents</text>
 
   <!-- ===================== LAYER 1: AGENT ===================== -->
   <rect x="20" y="160" width="1160" height="170" rx="8" fill="#1A1A1D" stroke="#FFFFFF" stroke-width="1" stroke-dasharray="6 4"/>
