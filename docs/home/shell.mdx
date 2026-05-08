@@ -48,7 +48,7 @@ The shell is how agents act on the workspace. `execute()` parses a bash-style co
     mirage execute --workspace demo --command "ls /data"
     mirage execute --workspace demo --session agent-1 --command "pwd"
     ```
-    Per-call `cwd` / `env` / `cancel` are SDK-only today. From the CLI, scope state with `--session` and stop background work with `mirage job kill`.
+    Per-call `cwd` / `env` / `cancel` are SDK-only as named flags. From the CLI, use bash subshell syntax inside the command string for per-call scoping (see below) and `mirage job cancel` to stop background work.
   </Tab>
 </Tabs>
 
@@ -81,12 +81,11 @@ Providing `cwd` or `env` runs the command in an ephemeral session clone, like a 
   </Tab>
   <Tab title="CLI​" icon="terminal">
     ```bash
-    # Use a session for scoped state
-    mirage session create demo --id agent-1
-    mirage execute -w demo -s agent-1 -c "cd /data"
-    mirage execute -w demo -s agent-1 -c "ls"
+    # Use a real bash subshell inside the command string
+    mirage execute -w demo -c "(cd /data && ls)"
+    mirage execute -w demo -c "env FOO=bar printenv FOO"
     ```
-    Per-call `cwd` is not a CLI flag yet. Spin up a dedicated session for transient state.
+    The CLI doesn't have `--cwd` / `--env` flags, but bash subshell syntax `(cd ... && cmd)` and the `env` prefix give the same per-call isolation. Mutations inside the parens don't leak.
   </Tab>
 </Tabs>
 
@@ -128,11 +127,11 @@ Both bindings support cooperative cancellation observed at recursion boundaries 
   </Tab>
   <Tab title="CLI​​" icon="terminal">
     ```bash
-    # Background the job, then kill it
+    # Background the job, then cancel it
     JOB_ID=$(mirage execute -w demo -c "sleep 60" --bg)
-    mirage job kill "$JOB_ID"
+    mirage job cancel "$JOB_ID"
     ```
-    Per-call `cancel` / timeout is not a CLI flag yet. Use `--bg` to get a job id and `mirage job kill` to terminate.
+    Per-call timeout is not a CLI flag yet. Use `--bg` to get a job id and `mirage job cancel` to terminate.
   </Tab>
 </Tabs>
 
