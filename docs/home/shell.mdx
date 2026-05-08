@@ -160,7 +160,7 @@ The parser treats leading `VARIABLE_ASSIGNMENT` nodes as part of argv instead of
 
 **Workarounds, in order of preference:**
 
-1. **From the SDK:** use the per-call `env` option (TS) or `env=` kwarg (Python). This is the structured, race-free path and the recommended approach for harnesses.
+1. **From the SDK:** use the per-call `env` parameter on `execute()`. Both bindings expose it the same way (TS as an options field, Python as a keyword argument). This is the structured, race-free path and the recommended approach for harnesses.
 2. **From a shell command string:** use a subshell `(export FOO=bar; cmd)`. The export is scoped to the subshell and does not leak to the parent session. This works in both `ws.execute('(export FOO=bar; cmd)')` and `mirage execute -c "(export FOO=bar; cmd)"`.
 3. **Mutate the session:** `ws.execute('export FOO=bar')` followed by `ws.execute('cmd')` if persistence is what you want.
 
