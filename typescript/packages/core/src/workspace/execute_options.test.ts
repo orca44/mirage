@@ -104,3 +104,48 @@ describe('execute({ cwd }): bash subshell semantics', () => {
     expect(session.functions.greet).toBeUndefined()
   })
 })
+
+describe('execute({ env }): bash subshell semantics', () => {
+  it('exposes override env to the command, like env FOO=bar printenv FOO', async () => {
+    const ws = await makeWs()
+    const r = await ws.execute('printenv FOO', { env: { FOO: 'bar' } })
+    expect(r.exitCode).toBe(0)
+    expect(stdoutStr(r).trim()).toBe('bar')
+    await ws.close()
+  })
+
+  it('does not mutate session.env', async () => {
+    const ws = await makeWs()
+    const before = { ...ws.env }
+    await ws.execute('printenv FOO', { env: { FOO: 'bar' } })
+    expect(ws.env).toEqual(before)
+    await ws.close()
+  })
+
+  it('does not let `export` inside the call leak back to session.env', async () => {
+    const ws = await makeWs()
+    await ws.execute('export LEAKED=yes', { env: { FOO: 'bar' } })
+    expect(ws.env.LEAKED).toBeUndefined()
+    await ws.close()
+  })
+
+  it('layers onto, does not replace, session env', async () => {
+    const ws = await makeWs()
+    ws.env = { BASE: 'keep' }
+    const r = await ws.execute('printenv BASE; printenv FOO', { env: { FOO: 'bar' } })
+    expect(stdoutStr(r)).toContain('keep')
+    expect(stdoutStr(r)).toContain('bar')
+    await ws.close()
+  })
+
+  it('does not leak between parallel calls (isolation regression guard)', async () => {
+    const ws = await makeWs()
+    const [a, b] = await Promise.all([
+      ws.execute('printenv X', { env: { X: 'one' } }),
+      ws.execute('printenv X', { env: { X: 'two' } }),
+    ])
+    expect(stdoutStr(a).trim()).toBe('one')
+    expect(stdoutStr(b).trim()).toBe('two')
+    await ws.close()
+  })
+})
