@@ -73,7 +73,7 @@ describe('execute({ cwd }): bash subshell semantics', () => {
     await ws.close()
   })
 
-  it("setup mutates session, per-call overrides inherit and do not leak", async () => {
+  it('setup mutates session, per-call overrides inherit and do not leak', async () => {
     const ws = await makeWs()
     const cwdBefore = ws.cwd
     await ws.execute('export DEBUG=1')
@@ -166,9 +166,9 @@ describe('execute({ signal }): mid-flight cancellation', () => {
   it('aborts a sleeping command within ~timeout window', async () => {
     const ws = await makeWs()
     const t0 = Date.now()
-    await expect(
-      ws.execute('sleep 5', { signal: AbortSignal.timeout(100) }),
-    ).rejects.toMatchObject({ name: 'AbortError' })
+    await expect(ws.execute('sleep 5', { signal: AbortSignal.timeout(100) })).rejects.toMatchObject(
+      { name: 'AbortError' },
+    )
     expect(Date.now() - t0).toBeLessThan(1000)
     await ws.close()
   })
@@ -177,7 +177,7 @@ describe('execute({ signal }): mid-flight cancellation', () => {
     const ws = await makeWs()
     const t0 = Date.now()
     const ac = new AbortController()
-    setTimeout(() => ac.abort(), 100)
+    setTimeout(() => { ac.abort(); }, 100)
     await expect(
       ws.execute('for i in 1 2 3 4 5 6 7 8 9 10; do sleep 1; done', {
         signal: ac.signal,
@@ -191,7 +191,7 @@ describe('execute({ signal }): mid-flight cancellation', () => {
     const ws = await makeWs()
     const t0 = Date.now()
     const ac = new AbortController()
-    setTimeout(() => ac.abort(), 100)
+    setTimeout(() => { ac.abort(); }, 100)
     await expect(
       ws.execute('sleep 1 && sleep 1 && sleep 1 && echo done', {
         signal: ac.signal,
@@ -205,7 +205,7 @@ describe('execute({ signal }): mid-flight cancellation', () => {
     const ws = await makeWs()
     const t0 = Date.now()
     const ac = new AbortController()
-    setTimeout(() => ac.abort(), 100)
+    setTimeout(() => { ac.abort(); }, 100)
     await expect(
       ws.execute('while true; do sleep 1; done', { signal: ac.signal }),
     ).rejects.toMatchObject({ name: 'AbortError' })
@@ -217,7 +217,7 @@ describe('execute({ signal }): mid-flight cancellation', () => {
     const ws = await makeWs()
     const t0 = Date.now()
     const ac = new AbortController()
-    setTimeout(() => ac.abort(), 100)
+    setTimeout(() => { ac.abort(); }, 100)
     await expect(
       ws.execute('sleep 1 | sleep 1 | sleep 1', { signal: ac.signal }),
     ).rejects.toMatchObject({ name: 'AbortError' })

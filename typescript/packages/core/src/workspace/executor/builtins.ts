@@ -681,10 +681,7 @@ export async function handleSource(
   return [io.stdout, io, new ExecutionNode({ command: `source ${raw}`, exitCode: io.exitCode })]
 }
 
-export async function handleSleep(
-  args: string[],
-  signal?: AbortSignal,
-): Promise<Result> {
+export async function handleSleep(args: string[], signal?: AbortSignal): Promise<Result> {
   const raw = args[0]
   if (raw === undefined) {
     return [null, new IOResult(), new ExecutionNode({ command: 'sleep', exitCode: 0 })]

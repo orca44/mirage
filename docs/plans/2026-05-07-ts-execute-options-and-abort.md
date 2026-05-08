@@ -8,21 +8,22 @@
 
 1. **Per-call cwd/env (#4, #5):** When either option is provided, construct a per-call ephemeral `Session` that shallow-clones the target session with overrides applied (`cwd` overridden, `env` = `{...session.env, ...options.env}`). The executor runs against the clone. Only `lastExitCode` propagates back to the persistent session — `cd`/`export` inside the call do not mutate the caller's session. The semantics match a bash subshell: `execute('ls', { cwd: '/data' })` is the JS equivalent of `(cd /data && ls)`. The clone is the software stand-in for what `fork()` provides automatically in Unix.
 
-2. **Mid-flight abort (#6):** Thread `signal` through `ExecuteNodeDeps`. Check `signal.aborted` at the top of `executeNode()` — every recursion (LIST, PIPELINE, FOR/WHILE/UNTIL iterations, COMMAND) passes through this gate, so cancellation lands within one boundary. For the long-blocking primitive `sleep`, race the timer against the signal so wall-clock aborts don't have to wait for sleep to finish.
+1. **Mid-flight abort (#6):** Thread `signal` through `ExecuteNodeDeps`. Check `signal.aborted` at the top of `executeNode()` — every recursion (LIST, PIPELINE, FOR/WHILE/UNTIL iterations, COMMAND) passes through this gate, so cancellation lands within one boundary. For the long-blocking primitive `sleep`, race the timer against the signal so wall-clock aborts don't have to wait for sleep to finish.
 
 **Two-scope model (do not introduce a third):**
 
-| Need | API | Bash equivalent |
-|---|---|---|
-| One isolated command | `execute(cmd, { cwd, env })` | `(cd /data && cmd)` |
-| Many isolated commands sharing scoped state | `createSession(id)` + pass `sessionId` | a separate terminal |
-| Persistent shell-like state | mutate the default session (no options) | `cd /data; cmd` |
+| Need                                        | API                                     | Bash equivalent     |
+| ------------------------------------------- | --------------------------------------- | ------------------- |
+| One isolated command                        | `execute(cmd, { cwd, env })`            | `(cd /data && cmd)` |
+| Many isolated commands sharing scoped state | `createSession(id)` + pass `sessionId`  | a separate terminal |
+| Persistent shell-like state                 | mutate the default session (no options) | `cd /data; cmd`     |
 
 Do **not** add a `subshell: {...}` option, an `isolated: true` flag, or any other third mode. Per-call cwd/env via flat options + sessions cover every case. If a "scoped multi-call helper" is ever needed, add it later as `ws.withScope(fn)` (additive, non-breaking).
 
 **Tech Stack:** TypeScript, Vitest, `@struktoai/mirage-core`. Tests live next to source as `*.test.ts`.
 
 **Key files:**
+
 - [workspace.ts:164](typescript/packages/core/src/workspace/workspace.ts#L164) — `ExecuteOptions` interface
 - [workspace.ts:526](typescript/packages/core/src/workspace/workspace.ts#L526) — `execute()` body
 - [execute_node.ts:99](typescript/packages/core/src/workspace/node/execute_node.ts#L99) — `ExecuteNodeDeps`
@@ -31,11 +32,12 @@ Do **not** add a `subshell: {...}` option, an `isolated: true` flag, or any othe
 - [session.ts:27](typescript/packages/core/src/workspace/session/session.ts#L27) — `Session` class
 
 **Out of scope:**
+
 - `FOO=bar cmd` prefix bug (mentioned in #5 context). User to decide whether to bundle in a follow-up.
 - Python-side abort/cwd/env work.
 - Issue #3 (batched reads) — separate plan.
 
----
+______________________________________________________________________
 
 ## Test harness
 
@@ -47,11 +49,12 @@ npx vitest run src/workspace/execute_options.test.ts
 
 Use `RAMResource` mounted at `/data` and a default `Workspace` for setup. Reuse the existing test scaffolding pattern from [execute.test.ts](typescript/packages/core/src/workspace/execute.test.ts) and [cwd_integration.test.ts](typescript/packages/core/src/workspace/cwd_integration.test.ts).
 
----
+______________________________________________________________________
 
 ## Task 1 — Per-call `cwd`: failing tests
 
 **Files:**
+
 - Create: `typescript/packages/core/src/workspace/execute_options.test.ts`
 
 **Step 1: Write the failing tests**
@@ -127,11 +130,12 @@ git add typescript/packages/core/src/workspace/execute_options.test.ts
 git commit -m "test: add failing tests for per-call cwd in ExecuteOptions"
 ```
 
----
+______________________________________________________________________
 
 ## Task 2 — Per-call `cwd`: implementation
 
 **Files:**
+
 - Modify: [workspace.ts:164](typescript/packages/core/src/workspace/workspace.ts#L164) — add field to `ExecuteOptions`
 - Modify: [workspace.ts:526](typescript/packages/core/src/workspace/workspace.ts#L526) — build ephemeral session
 
@@ -186,9 +190,11 @@ const effectiveSession = useOverride
 Replace `targetSession` with `effectiveSession` only in the `executeNode(...)` call (line 606). Keep `targetSession` for `lastExitCode` write-back, `sessionCwd`, observer logging, and history — those should still reference the persistent session.
 
 After execute, replace `targetSession.lastExitCode = io.exitCode` with:
+
 ```typescript
 targetSession.lastExitCode = io.exitCode
 ```
+
 (unchanged — write-back to real session preserves `$?` semantics).
 
 Add the import for `Session` at the top of the file.
@@ -210,11 +216,12 @@ git add typescript/packages/core/src/workspace/workspace.ts
 git commit -m "feat(core): support per-call cwd in ExecuteOptions (#4)"
 ```
 
----
+______________________________________________________________________
 
 ## Task 3 — Per-call `env`: failing tests
 
 **Files:**
+
 - Modify: `typescript/packages/core/src/workspace/execute_options.test.ts`
 
 **Step 1: Append to test file**
@@ -273,11 +280,12 @@ git add typescript/packages/core/src/workspace/execute_options.test.ts
 git commit -m "test: add failing tests for per-call env in ExecuteOptions"
 ```
 
----
+______________________________________________________________________
 
 ## Task 4 — Per-call `env`: implementation
 
 **Files:**
+
 - Modify: [workspace.ts:164](typescript/packages/core/src/workspace/workspace.ts#L164)
 - Modify: [workspace.ts:526](typescript/packages/core/src/workspace/workspace.ts#L526)
 
@@ -337,11 +345,12 @@ git add typescript/packages/core/src/workspace/workspace.ts
 git commit -m "feat(core): support per-call env in ExecuteOptions (#5)"
 ```
 
----
+______________________________________________________________________
 
 ## Task 5 — Mid-flight abort: failing tests
 
 **Files:**
+
 - Modify: `typescript/packages/core/src/workspace/execute_options.test.ts`
 
 **Step 1: Append to test file**
@@ -405,11 +414,12 @@ git add typescript/packages/core/src/workspace/execute_options.test.ts
 git commit -m "test: add failing tests for mid-flight abort observation"
 ```
 
----
+______________________________________________________________________
 
 ## Task 6 — Thread signal through `ExecuteNodeDeps` and gate at recursion boundary
 
 **Files:**
+
 - Modify: [execute_node.ts:99](typescript/packages/core/src/workspace/node/execute_node.ts#L99) — `ExecuteNodeDeps`
 - Modify: [execute_node.ts:113](typescript/packages/core/src/workspace/node/execute_node.ts#L113) — top of `executeNode`
 - Modify: [workspace.ts:587](typescript/packages/core/src/workspace/workspace.ts#L587) — pass signal in `deps`
@@ -453,11 +463,12 @@ const deps = {
 Run: `npx vitest run src/workspace/execute_options.test.ts`
 Expected: pre-abort PASS, for-loop PASS, LIST PASS. `sleep 5` test still FAILS (sleep doesn't yield).
 
----
+______________________________________________________________________
 
 ## Task 7 — Make `handleSleep` honor the signal
 
 **Files:**
+
 - Modify: [builtins.ts:684](typescript/packages/core/src/workspace/executor/builtins.ts#L684)
 - Modify: [execute_node.ts](typescript/packages/core/src/workspace/node/execute_node.ts) — pass signal into `handleSleep`
 
@@ -512,7 +523,7 @@ At the location identified in Step 1, change `handleSleep(args)` → `handleSlee
 **Step 4: Run tests**
 
 Run: `npx vitest run src/workspace/execute_options.test.ts`
-Expected: All abort tests PASS, including `sleep 5` aborting in <1s.
+Expected: All abort tests PASS, including `sleep 5` aborting in \<1s.
 
 **Step 5: Run wider suite**
 
@@ -526,7 +537,7 @@ git add typescript/packages/core/src/
 git commit -m "feat(core): observe AbortSignal mid-execution (#6)"
 ```
 
----
+______________________________________________________________________
 
 ## Task 8 — Final verification
 
@@ -560,7 +571,7 @@ Save and run a small TS scratch script that reproduces the example from issue #6
 - #5: `env?: Record<string, string>` in `ExecuteOptions`, layered with spread, no `session.env` mutation.
 - #6: `signal` threaded into deps, top-of-`executeNode` gate, `handleSleep` race.
 
----
+______________________________________________________________________
 
 ## Open question for the user
 
