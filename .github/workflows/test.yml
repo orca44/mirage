@@ -76,3 +76,55 @@ jobs:
       - name: Run TypeScript tests
         working-directory: typescript
         run: pnpm test
+
+  import-isolation:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - extra: pydantic-ai
+            module: mirage.agents.pydantic_ai
+            blocked: deepagents
+          - extra: openai
+            module: mirage.agents.openai_agents
+            blocked: deepagents
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Create venv and install only the target extra
+        working-directory: python
+        run: |
+          uv venv .venv-iso
+          uv pip install --python .venv-iso/bin/python ".[${{ matrix.extra }}]"
+
+      - name: Verify blocked package is not installed
+        working-directory: python
+        run: |
+          if .venv-iso/bin/python -c "import ${{ matrix.blocked }}" 2>/dev/null; then
+            echo "FAIL: ${{ matrix.blocked }} should not be installed for extra=${{ matrix.extra }}"
+            exit 1
+          fi
+          echo "OK: ${{ matrix.blocked }} is absent"
+
+      - name: Import agent package and prompt without blocked dep
+        working-directory: python
+        run: |
+          .venv-iso/bin/python - <<'PY'
+          import importlib, sys
+          mod = importlib.import_module("${{ matrix.module }}")
+          prompt = importlib.import_module("${{ matrix.module }}.prompt")
+          assert isinstance(prompt.MIRAGE_SYSTEM_PROMPT, str)
+          assert callable(prompt.build_system_prompt)
+          assert "${{ matrix.blocked }}" not in sys.modules, \
+              f"${{ matrix.blocked }} got imported transitively"
+          print(f"OK: imported ${{ matrix.module }} cleanly without ${{ matrix.blocked }}")
+          PY

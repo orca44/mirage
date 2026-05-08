@@ -12,7 +12,6 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.agents.langchain.prompt import (MIRAGE_SYSTEM_PROMPT,
-                                            build_system_prompt)
+from mirage.agents.prompts import MIRAGE_SYSTEM_PROMPT, build_system_prompt
 
 __all__ = ["MIRAGE_SYSTEM_PROMPT", "build_system_prompt"]

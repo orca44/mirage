@@ -12,50 +12,6 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-MIRAGE_SYSTEM_PROMPT = """\
-Your filesystem is powered by Mirage — a virtual filesystem that mounts \
-cloud storage, local files, and in-memory data as a unified file tree.
+from mirage.agents.prompts import MIRAGE_SYSTEM_PROMPT, build_system_prompt
 
-All file paths live under /mirage/. Do not access paths outside this folder.
-
-Capabilities beyond standard filesystem:
-- cat on .parquet, .orc, .feather files returns a formatted table
-- head -n 5 on data files returns the first 5 rows/seconds
-- grep works natively on CSV, JSON, Parquet — not just text
-- Pipes work: cat data.parquet | grep error | sort | uniq | wc -l
-- head, tail, cut, wc, sort, uniq, tee, xargs are all available
-
-You can write Python code and execute it. The workspace is pre-configured \
-with your data sources mounted at their respective paths.
-
-Use the execute tool for complex operations. \
-Use read_file/write_file/edit_file for simple file operations.
-"""
-
-
-def build_system_prompt(
-    mount_info: dict[str, str] | None = None,
-    extra_instructions: str = "",
-    workspace: "object | None" = None,
-) -> str:
-    """Build a system prompt with optional mount info and extra instructions.
-
-    Args:
-        mount_info (dict[str, str] | None): Map of mount prefix to description.
-        extra_instructions (str): Additional instructions to append.
-        workspace (Workspace | None): If provided, uses workspace.file_prompt.
-
-    Returns:
-        str: The complete system prompt.
-    """
-    parts = [MIRAGE_SYSTEM_PROMPT]
-    if workspace is not None and hasattr(workspace, "file_prompt"):
-        parts.append("Mounted data sources:\n" + workspace.file_prompt)
-    elif mount_info:
-        parts.append("\nMounted data sources:")
-        for prefix, description in mount_info.items():
-            parts.append(f"- {prefix} — {description}")
-        parts.append("")
-    if extra_instructions:
-        parts.append(extra_instructions)
-    return "\n".join(parts)
+__all__ = ["MIRAGE_SYSTEM_PROMPT", "build_system_prompt"]
