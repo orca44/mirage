@@ -17,7 +17,8 @@ import { OpsRegistry } from '../ops/registry.ts'
 import { RAMResource } from '../resource/ram/ram.ts'
 import { MountMode } from '../types.ts'
 import { getTestParser, stdoutStr } from './fixtures/workspace_fixture.ts'
-import { ExecuteResult, Workspace } from './workspace.ts'
+import type { ExecuteResult } from './workspace.ts'
+import { Workspace } from './workspace.ts'
 
 const ENC = new TextEncoder()
 
@@ -333,12 +334,12 @@ describe('execute(): agent harness pattern', () => {
       toolCall(ws, 'sleep 5', '/ram/subdir', { DEBUG: 'one' }, 100),
       toolCall(ws, 'echo ok', '/ram', { DEBUG: 'two' }, 5000),
     ])
-    expect(settled[0]?.status).toBe('rejected')
-    if (settled[0]?.status === 'rejected') {
+    expect(settled[0].status).toBe('rejected')
+    if (settled[0].status === 'rejected') {
       expect(settled[0].reason).toMatchObject({ name: 'AbortError' })
     }
-    expect(settled[1]?.status).toBe('fulfilled')
-    if (settled[1]?.status === 'fulfilled') {
+    expect(settled[1].status).toBe('fulfilled')
+    if (settled[1].status === 'fulfilled') {
       expect(stdoutStr(settled[1].value).trim()).toBe('ok')
     }
     await ws.close()
