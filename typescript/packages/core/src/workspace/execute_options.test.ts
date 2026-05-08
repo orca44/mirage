@@ -73,8 +73,9 @@ describe('execute({ cwd }): bash subshell semantics', () => {
     await ws.close()
   })
 
-  it("Fred's pattern: setup mutates session, per-call overrides inherit and don't leak", async () => {
+  it("setup mutates session, per-call overrides inherit and do not leak", async () => {
     const ws = await makeWs()
+    const cwdBefore = ws.cwd
     await ws.execute('export DEBUG=1')
     const [a, b] = await Promise.all([
       ws.execute('printenv DEBUG; pwd', { cwd: '/ram/subdir' }),
@@ -85,7 +86,14 @@ describe('execute({ cwd }): bash subshell semantics', () => {
     expect(stdoutStr(b)).toContain('1')
     expect(stdoutStr(b)).toContain('/ram')
     expect(ws.env.DEBUG).toBe('1')
-    expect(ws.cwd).not.toBe('/ram/subdir')
+    expect(ws.cwd).toBe(cwdBefore)
+    await ws.close()
+  })
+
+  it('propagates lastExitCode back to the persistent session', async () => {
+    const ws = await makeWs()
+    await ws.execute('false', { cwd: '/ram/subdir' })
+    expect(ws.sessionManager.get(ws.sessionManager.defaultId).lastExitCode).toBe(1)
     await ws.close()
   })
 })
