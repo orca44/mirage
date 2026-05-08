@@ -1,0 +1,140 @@
+---
+title: Shell
+description: The `execute()` API, per-call `cwd`/`env` overrides, and mid-flight cancellation.
+icon: terminal
+---
+
+The shell is how agents act on the workspace. `execute()` parses a bash-style command, looks up the target session, resolves mounts, runs the executor, applies I/O side effects, and records history.
+
+## `execute()`
+
+<CodeGroup>
+```python Python
+async def execute(
+    self,
+    command: str,
+    session_id: str = DEFAULT_SESSION_ID,
+    stdin: AsyncIterator[bytes] | bytes | None = None,
+    provision: bool = False,
+    agent_id: str = DEFAULT_AGENT_ID,
+    native: bool | None = None,
+    cwd: str | None = None,
+    env: dict[str, str] | None = None,
+    cancel: asyncio.Event | None = None,
+) -> IOResult:
+```
+
+```typescript TypeScript
+interface ExecuteOptions {
+  stdin?: ByteSource | null
+  provision?: boolean
+  sessionId?: string
+  agentId?: string
+  native?: boolean
+  signal?: AbortSignal
+  noHistory?: boolean
+  cwd?: string
+  env?: Record<string, string>
+}
+
+async execute(command: string, options?: ExecuteOptions): Promise<ExecuteResult>
+```
+</CodeGroup>
+
+## Per-call overrides: `cwd`, `env`
+
+Providing `cwd` or `env` runs the command in an ephemeral session clone, like a bash subshell `(cd /data && cmd)`. Mutations like `cd` or `export` inside the call do NOT persist back to the workspace's session. To change persistent state, run the command without these options.
+
+<CodeGroup>
+```python Python
+# Persistent mutation (no options): like `cd /data; cmd`
+await ws.execute("cd /data")
+await ws.execute("ls")  # sees /data
+
+# One-shot subshell (with cwd): like `(cd /data && cmd)`
+await ws.execute("ls", cwd="/data")
+# ws.cwd is unchanged; mutations inside don't leak
+```
+
+```typescript TypeScript
+// Persistent mutation
+await ws.execute("cd /data")
+await ws.execute("ls")  // sees /data
+
+// One-shot subshell
+await ws.execute("ls", { cwd: "/data" })
+// ws.cwd is unchanged; mutations inside don't leak
+```
+</CodeGroup>
+
+This makes per-call overrides safe under concurrent calls on the same session. Two parallel `execute()` calls with different `cwd` see their own cwd without cross-contamination, even on the same session.
+
+## Mid-flight cancellation: `cancel` / `signal`
+
+Both bindings support cooperative cancellation observed at recursion boundaries (LIST, PIPELINE, FOR/WHILE/UNTIL iterations, COMMAND, subshells, command substitution) and inside `sleep`. On cancel, the call raises an abort error.
+
+<CodeGroup>
+```python Python
+import asyncio
+from mirage.workspace.abort import MirageAbortError
+
+cancel = asyncio.Event()
+
+async def trigger():
+    await asyncio.sleep(0.1)
+    cancel.set()
+
+asyncio.create_task(trigger())
+try:
+    await ws.execute("sleep 5", cancel=cancel)
+except MirageAbortError:
+    print("aborted")
+```
+
+```typescript TypeScript
+try {
+  await ws.execute("sleep 5", { signal: AbortSignal.timeout(100) })
+} catch (e) {
+  if (e instanceof DOMException && e.name === "AbortError") {
+    console.log("aborted")
+  }
+}
+```
+</CodeGroup>
+
+## Three Scopes for State
+
+| Need | API | Bash equivalent |
+| --- | --- | --- |
+| One isolated command | `execute(cmd, cwd=..., env=...)` | `(cd /data && cmd)` |
+| Many isolated commands sharing scoped state | `session_id=...` (Py) / `sessionId` (TS) | a separate terminal |
+| Persistent shell mutations | run without options | `cd /data; cmd` |
+
+## Agent Pattern
+
+Agent harnesses commonly fan out tool calls in parallel, each with its own `cwd`/`env`/`cancel`. The clone semantics make this race-free without per-call boilerplate.
+
+<CodeGroup>
+```python Python
+async def tool_call(cmd: str, cwd: str, env: dict[str, str], timeout: float):
+    cancel = asyncio.Event()
+    asyncio.get_event_loop().call_later(timeout, cancel.set)
+    return await ws.execute(cmd, cwd=cwd, env=env, cancel=cancel)
+
+results = await asyncio.gather(
+    tool_call("ls", "/data", {"DEBUG": "1"}, 5.0),
+    tool_call("grep foo *.log", "/logs", {"DEBUG": "1"}, 5.0),
+)
+```
+
+```typescript TypeScript
+async function toolCall(cmd: string, cwd: string, env: Record<string, string>, timeoutMs: number) {
+  return ws.execute(cmd, { cwd, env, signal: AbortSignal.timeout(timeoutMs) })
+}
+
+const results = await Promise.all([
+  toolCall("ls", "/data", { DEBUG: "1" }, 5000),
+  toolCall("grep foo *.log", "/logs", { DEBUG: "1" }, 5000),
+])
+```
+</CodeGroup>
