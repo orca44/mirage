@@ -1,0 +1,202 @@
+---
+title: Shell
+description: The `execute()` API, per-call `cwd`/`env` overrides, and mid-flight cancellation.
+icon: terminal
+---
+
+The shell is how agents act on the workspace. `execute()` parses a bash-style command, looks up the target session, resolves mounts, runs the executor, applies I/O side effects, and records history.
+
+## `execute()`
+
+<Tabs>
+  <Tab title="Python" icon="/images/python-logo.svg">
+    ```python
+    async def execute(
+        self,
+        command: str,
+        session_id: str = DEFAULT_SESSION_ID,
+        stdin: AsyncIterator[bytes] | bytes | None = None,
+        provision: bool = False,
+        agent_id: str = DEFAULT_AGENT_ID,
+        native: bool | None = None,
+        cwd: str | None = None,
+        env: dict[str, str] | None = None,
+        cancel: asyncio.Event | None = None,
+    ) -> IOResult:
+        ...
+    ```
+  </Tab>
+  <Tab title="TypeScript" icon="/images/typescript-logo.svg">
+    ```typescript
+    interface ExecuteOptions {
+      stdin?: ByteSource | null
+      provision?: boolean
+      sessionId?: string
+      agentId?: string
+      native?: boolean
+      signal?: AbortSignal
+      noHistory?: boolean
+      cwd?: string
+      env?: Record<string, string>
+    }
+
+    async execute(command: string, options?: ExecuteOptions): Promise<ExecuteResult>
+    ```
+  </Tab>
+  <Tab title="CLI" icon="terminal">
+    ```bash
+    mirage execute --workspace demo --command "ls /data"
+    mirage execute --workspace demo --session agent-1 --command "pwd"
+    ```
+    Per-call `cwd` / `env` / `cancel` are SDK-only as named flags. From the CLI, use bash subshell syntax inside the command string for per-call scoping (see below) and `mirage job cancel` to stop background work.
+  </Tab>
+</Tabs>
+
+## Per-call overrides: `cwd`, `env`
+
+Providing `cwd` or `env` runs the command in an ephemeral session clone, like a bash subshell `(cd /data && cmd)`. Mutations like `cd` or `export` inside the call do NOT persist back to the workspace's session. To change persistent state, run the command without these options.
+
+<Tabs>
+  <Tab title="Python​" icon="/images/python-logo.svg">
+    ```python
+    # Persistent mutation (no options): like `cd /data; cmd`
+    await ws.execute("cd /data")
+    await ws.execute("ls")  # sees /data
+
+    # One-shot subshell (with cwd): like `(cd /data && cmd)`
+    await ws.execute("ls", cwd="/data")
+    # ws.cwd is unchanged; mutations inside don't leak
+    ```
+  </Tab>
+  <Tab title="TypeScript​" icon="/images/typescript-logo.svg">
+    ```typescript
+    // Persistent mutation
+    await ws.execute("cd /data")
+    await ws.execute("ls")  // sees /data
+
+    // One-shot subshell
+    await ws.execute("ls", { cwd: "/data" })
+    // ws.cwd is unchanged; mutations inside don't leak
+    ```
+  </Tab>
+  <Tab title="CLI​" icon="terminal">
+    ```bash
+    # Use a real bash subshell inside the command string
+    mirage execute -w demo -c "(cd /data && ls)"
+    mirage execute -w demo -c "(export FOO=bar; printenv FOO)"
+    ```
+    The CLI doesn't have `--cwd` / `--env` flags, but bash subshell syntax `(cd ... && cmd)` and `(export FOO=bar; cmd)` give the same per-call isolation. Mutations inside the parens don't leak.
+  </Tab>
+</Tabs>
+
+This makes per-call overrides safe under concurrent calls on the same session. Two parallel `execute()` calls with different `cwd` see their own cwd without cross-contamination, even on the same session.
+
+## Mid-flight cancellation: `cancel` / `signal`
+
+Both bindings support cooperative cancellation observed at recursion boundaries (LIST, PIPELINE, FOR/WHILE/UNTIL iterations, COMMAND, subshells, command substitution) and inside `sleep`. On cancel, the call raises an abort error.
+
+<Tabs>
+  <Tab title="Python​​" icon="/images/python-logo.svg">
+    ```python
+    import asyncio
+    from mirage.workspace.abort import MirageAbortError
+
+    cancel = asyncio.Event()
+
+    async def trigger():
+        await asyncio.sleep(0.1)
+        cancel.set()
+
+    asyncio.create_task(trigger())
+    try:
+        await ws.execute("sleep 5", cancel=cancel)
+    except MirageAbortError:
+        print("aborted")
+    ```
+  </Tab>
+  <Tab title="TypeScript​​" icon="/images/typescript-logo.svg">
+    ```typescript
+    try {
+      await ws.execute("sleep 5", { signal: AbortSignal.timeout(100) })
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") {
+        console.log("aborted")
+      }
+    }
+    ```
+  </Tab>
+  <Tab title="CLI​​" icon="terminal">
+    ```bash
+    # Background the job, then cancel it
+    JOB_ID=$(mirage execute -w demo -c "sleep 60" --bg)
+    mirage job cancel "$JOB_ID"
+    ```
+    Per-call timeout is not a CLI flag yet. Use `--bg` to get a job id and `mirage job cancel` to terminate.
+  </Tab>
+</Tabs>
+
+## Three Scopes for State
+
+| Need | API | Bash equivalent |
+| --- | --- | --- |
+| One isolated command | `execute(cmd, cwd=..., env=...)` | `(cd /data && cmd)` |
+| Many isolated commands sharing scoped state | `session_id=...` (Py) / `sessionId` (TS) | a separate terminal |
+| Persistent shell mutations | run without options | `cd /data; cmd` |
+
+## Limitations
+
+### `FOO=bar cmd` prefix is silently broken
+
+The standard bash inline-assignment prefix (`FOO=bar cmd`) does NOT work in Mirage's executor. Both Python and TypeScript bindings are affected — this is in the shared shell parser, not the language runtime.
+
+```bash
+# These look like bash but produce wrong results:
+FOO=bar printenv FOO        # exit 1, stdout empty (FOO=bar leaked into argv)
+FOO=bar echo "$FOO"          # prints empty (FOO=bar treated as command name)
+env FOO=bar printenv FOO    # exit 127 ("env: command not found"; no env builtin)
+```
+
+The parser treats leading `VARIABLE_ASSIGNMENT` nodes as part of argv instead of stripping them into the command's environment, and there is no `env` builtin to fall back on.
+
+**Workarounds, in order of preference:**
+
+1. **From the SDK:** use the per-call `env` parameter on `execute()`. Both bindings expose it the same way (TS as an options field, Python as a keyword argument). This is the structured, race-free path and the recommended approach for harnesses.
+2. **From a shell command string:** use a subshell `(export FOO=bar; cmd)`. The export is scoped to the subshell and does not leak to the parent session. This works in both `ws.execute('(export FOO=bar; cmd)')` and `mirage execute -c "(export FOO=bar; cmd)"`.
+3. **Mutate the session:** `ws.execute('export FOO=bar')` followed by `ws.execute('cmd')` if persistence is what you want.
+
+## Agent Pattern
+
+Agent harnesses commonly fan out tool calls in parallel, each with its own `cwd`/`env`/`cancel`. The clone semantics make this race-free without per-call boilerplate.
+
+<Tabs>
+  <Tab title="Python​​​" icon="/images/python-logo.svg">
+    ```python
+    async def tool_call(cmd: str, cwd: str, env: dict[str, str], timeout: float):
+        cancel = asyncio.Event()
+        asyncio.get_event_loop().call_later(timeout, cancel.set)
+        return await ws.execute(cmd, cwd=cwd, env=env, cancel=cancel)
+
+    results = await asyncio.gather(
+        tool_call("ls", "/data", {"DEBUG": "1"}, 5.0),
+        tool_call("grep foo *.log", "/logs", {"DEBUG": "1"}, 5.0),
+    )
+    ```
+  </Tab>
+  <Tab title="TypeScript​​​" icon="/images/typescript-logo.svg">
+    ```typescript
+    async function toolCall(
+      cmd: string,
+      cwd: string,
+      env: Record<string, string>,
+      timeoutMs: number,
+    ) {
+      return ws.execute(cmd, { cwd, env, signal: AbortSignal.timeout(timeoutMs) })
+    }
+
+    const results = await Promise.all([
+      toolCall("ls", "/data", { DEBUG: "1" }, 5000),
+      toolCall("grep foo *.log", "/logs", { DEBUG: "1" }, 5000),
+    ])
+    ```
+  </Tab>
+</Tabs>

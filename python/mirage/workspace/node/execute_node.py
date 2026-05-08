@@ -12,6 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import asyncio
 from functools import partial
 from typing import Any, Callable
 
@@ -24,6 +25,7 @@ from mirage.shell.types import NodeType as NT
 from mirage.shell.types import Redirect, RedirectKind
 from mirage.shell.types import ShellBuiltin as SB
 from mirage.types import PathSpec
+from mirage.workspace.abort import MirageAbortError
 from mirage.workspace.executor.command import handle_command
 from mirage.workspace.executor.control import (BreakSignal, ContinueSignal,
                                                handle_case, handle_for,
@@ -67,6 +69,7 @@ async def execute_node(
     stdin: Any = None,
     call_stack: CallStack | None = None,
     history: object = None,
+    cancel: asyncio.Event | None = None,
 ) -> tuple[Any, IOResult, ExecutionNode]:
     """Walk tree-sitter AST and dispatch each node.
 
@@ -80,7 +83,11 @@ async def execute_node(
         session (Session): shell session state.
         stdin (Any): input stream.
         call_stack (CallStack): shell call stack.
+        history (object): execution history sink.
+        cancel (asyncio.Event | None): event used to abort mid-flight.
     """
+    if cancel is not None and cancel.is_set():
+        raise MirageAbortError()
     cs = call_stack or CallStack()
 
     recurse = partial(execute_node,
@@ -89,7 +96,8 @@ async def execute_node(
                       job_table,
                       execute_fn,
                       agent_id,
-                      history=history)
+                      history=history,
+                      cancel=cancel)
 
     ntype = node.type
 
@@ -112,7 +120,8 @@ async def execute_node(
                                       stdin,
                                       cs,
                                       job_table,
-                                      history=history)
+                                      history=history,
+                                      cancel=cancel)
 
     # ── pipeline ────────────────────────────────
     if ntype == NT.PIPELINE:
@@ -500,6 +509,7 @@ async def _execute_command(
     call_stack,
     job_table,
     history: object = None,
+    cancel: asyncio.Event | None = None,
 ) -> tuple[Any, IOResult, ExecutionNode]:
     """Dispatch a command node by name."""
     name = get_command_name(node)
@@ -653,7 +663,7 @@ async def _execute_command(
         return await handle_printf(expanded[1:])
 
     if name == SB.SLEEP:
-        return await handle_sleep(expanded[1:])
+        return await handle_sleep(expanded[1:], cancel=cancel)
 
     if name == SB.RETURN:
         exit_code = int(expanded[1]) if len(expanded) > 1 else 0

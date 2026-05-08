@@ -18,6 +18,7 @@ import { asyncChain } from '../../io/stream.ts'
 import type { ByteSource } from '../../io/types.ts'
 import { IOResult, materialize } from '../../io/types.ts'
 import type { Resource } from '../../resource/base.ts'
+import { makeAbortError } from '../abort.ts'
 import type { CallStack } from '../../shell/call_stack.ts'
 import {
   getCaseItems,
@@ -108,6 +109,7 @@ export interface ExecuteNodeDeps {
   unmount?: (prefix: string) => Promise<void>
   pythonRuntime?: PyodideRuntime
   history?: CommandHistory
+  signal?: AbortSignal
 }
 
 export async function executeNode(
@@ -126,6 +128,10 @@ export async function executeNode(
 
   const { dispatch, registry, jobTable, executeFn, agentId } = deps
   const ntype = node.type
+
+  if (deps.signal?.aborted === true) {
+    throw makeAbortError()
+  }
 
   if (ntype === NT.COMMENT) {
     return [null, new IOResult(), new ExecutionNode({ command: '', exitCode: 0 })]
@@ -150,6 +156,7 @@ export async function executeNode(
       deps.unmount,
       deps.pythonRuntime,
       deps.history,
+      deps.signal,
     )
   }
 
@@ -455,6 +462,7 @@ async function executeCommand(
   unmount?: (prefix: string) => Promise<void>,
   pythonRuntime?: PyodideRuntime,
   history?: CommandHistory,
+  signal?: AbortSignal,
 ): Promise<Result> {
   const name = getCommandName(node)
   const parts = getParts(node)
@@ -575,7 +583,7 @@ async function executeCommand(
     )
   }
   if (name === SB.PRINTF) return handlePrintf(finalExpanded.slice(1))
-  if (name === SB.SLEEP) return handleSleep(finalExpanded.slice(1))
+  if (name === SB.SLEEP) return handleSleep(finalExpanded.slice(1), signal)
   if (name === SB.READ) {
     return handleRead(finalExpanded.slice(1), session, stdin)
   }

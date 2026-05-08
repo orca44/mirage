@@ -27,6 +27,7 @@ import { FileType, PathSpec } from '../../types.ts'
 import type { Mount } from '../mount/mount.ts'
 import { DEV_PREFIX, type MountRegistry } from '../mount/registry.ts'
 import type { Session } from '../session/session.ts'
+import { sleep } from '../abort.ts'
 import { ExecutionNode } from '../types.ts'
 import type { DispatchFn } from './cross_mount.ts'
 import { ReturnSignal } from './command.ts'
@@ -681,7 +682,7 @@ export async function handleSource(
   return [io.stdout, io, new ExecutionNode({ command: `source ${raw}`, exitCode: io.exitCode })]
 }
 
-export async function handleSleep(args: string[]): Promise<Result> {
+export async function handleSleep(args: string[], signal?: AbortSignal): Promise<Result> {
   const raw = args[0]
   if (raw === undefined) {
     return [null, new IOResult(), new ExecutionNode({ command: 'sleep', exitCode: 0 })]
@@ -695,6 +696,6 @@ export async function handleSleep(args: string[]): Promise<Result> {
       new ExecutionNode({ command: 'sleep', exitCode: 1 }),
     ]
   }
-  await new Promise<void>((resolve) => setTimeout(resolve, seconds * 1000))
+  await sleep(seconds * 1000, signal)
   return [null, new IOResult(), new ExecutionNode({ command: 'sleep', exitCode: 0 })]
 }

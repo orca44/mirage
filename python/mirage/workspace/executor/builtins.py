@@ -28,6 +28,7 @@ from mirage.io.types import ByteSource
 from mirage.shell.call_stack import CallStack
 from mirage.types import FileType, PathSpec
 from mirage.utils.path import resolve_path
+from mirage.workspace.abort import cancellable_sleep
 from mirage.workspace.executor.control import ReturnSignal
 from mirage.workspace.mount.mount import Mount
 from mirage.workspace.mount.registry import DEV_PREFIX, MountRegistry
@@ -679,7 +680,8 @@ async def handle_printf(
 
 
 async def handle_sleep(
-        args: list[str],  # noqa: E125
+    args: list[str],
+    cancel: asyncio.Event | None = None,
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     try:
         seconds = float(args[0]) if args else 0
@@ -688,7 +690,7 @@ async def handle_sleep(
         return None, IOResult(exit_code=1,
                               stderr=err), ExecutionNode(command="sleep",
                                                          exit_code=1)
-    await asyncio.sleep(seconds)
+    await cancellable_sleep(seconds, cancel)
     return None, IOResult(), ExecutionNode(command="sleep", exit_code=0)
 
 

@@ -55,10 +55,11 @@ import { handlePythonRepl } from './executor/python/handle.ts'
 import type { BridgeDispatchFn, MirageEntry } from './executor/python/mirage_bridge.ts'
 import { PyodideRuntime } from './executor/python/runtime.ts'
 import type { PythonReplRunResult } from './executor/python/types.ts'
+import { makeAbortError } from './abort.ts'
 import { executeNode } from './node/execute_node.ts'
 import { provisionNode } from './node/provision_node.ts'
 import { SessionManager } from './session/manager.ts'
-import type { Session } from './session/session.ts'
+import { Session } from './session/session.ts'
 import { ExecutionHistory } from './history.ts'
 import { ExecutionNode, ExecutionRecord } from './types.ts'
 
@@ -167,11 +168,35 @@ export interface ExecuteOptions {
   sessionId?: string
   agentId?: string
   native?: boolean
+  /**
+   * Abort the in-progress execution. Observed cooperatively at recursion
+   * boundaries between LIST/PIPELINE/loop iterations and inside `sleep`.
+   * Long-running synchronous primitives (e.g. a single large file read)
+   * may still complete before the signal lands. On abort, throws
+   * `DOMException('execute aborted', 'AbortError')`.
+   */
   signal?: AbortSignal
   // When true, do not record this execution in history. Useful for
   // implicit/utility commands the UI runs (e.g. `stat` for an `open` action)
   // that shouldn't pollute the user's command history.
   noHistory?: boolean
+  /**
+   * Per-call working directory. Providing this runs the command in an
+   * isolated session, like a bash subshell `(cd <cwd> && cmd)`. Mutations
+   * (cd, export) inside the call do NOT persist back to the workspace's
+   * session. To change the persistent cwd, assign `ws.cwd` directly or run
+   * `ws.execute('cd <path>')` without this option.
+   */
+  cwd?: string
+  /**
+   * Per-call environment variable overrides, layered on top of the
+   * session's env. Providing this runs the command in an isolated session,
+   * like `env FOO=bar cmd`. Mutations (export) inside the call do NOT
+   * persist back to the workspace's session. To change the persistent env,
+   * assign `ws.env` directly or run `ws.execute('export FOO=bar')` without
+   * this option.
+   */
+  env?: Record<string, string>
 }
 
 const HELP_HINT =
@@ -528,7 +553,7 @@ export class Workspace {
     options: ExecuteOptions = {},
   ): Promise<ExecuteResult | ProvisionResult> {
     if (options.signal?.aborted === true) {
-      throw new DOMException('execute aborted', 'AbortError')
+      throw makeAbortError()
     }
     const stdin = options.stdin ?? null
     if (options.provision === true) return this.provision(command)
@@ -569,7 +594,9 @@ export class Workspace {
     }
 
     const executeFn: ExecuteFn = async (cmd) => {
-      const res = await this.execute(cmd)
+      const innerOpts: ExecuteOptions & { provision?: false } = {}
+      if (options.signal !== undefined) innerOpts.signal = options.signal
+      const res = await this.execute(cmd, innerOpts)
       return new IOResult({
         exitCode: res.exitCode,
         stdout: res.stdout,
@@ -599,11 +626,24 @@ export class Workspace {
       unmount: (prefix: string) => this.unmount(prefix),
       pythonRuntime: this.pythonRuntime,
       history: this.history,
+      ...(options.signal !== undefined ? { signal: options.signal } : {}),
     }
     const targetSessionId = options.sessionId ?? this.sessionManager.defaultId
     const targetSession = this.sessionManager.get(targetSessionId)
+    const useOverride = options.cwd !== undefined || options.env !== undefined
+    const effectiveSession = useOverride
+      ? new Session({
+          sessionId: targetSession.sessionId,
+          cwd: options.cwd ?? targetSession.cwd,
+          env: { ...targetSession.env, ...(options.env ?? {}) },
+          createdAt: targetSession.createdAt,
+          functions: { ...targetSession.functions },
+          lastExitCode: targetSession.lastExitCode,
+          positionalArgs: [...targetSession.positionalArgs],
+        })
+      : targetSession
     const [[stdout, io], opRecords] = await runWithRecording(() =>
-      executeNode(deps, rootNode, targetSession, stdin, null),
+      executeNode(deps, rootNode, effectiveSession, stdin, null),
     )
     const materialized = await applyBarrier(stdout, io, BarrierPolicy.VALUE)
     io.syncExitCode()
@@ -614,7 +654,7 @@ export class Workspace {
 
     this.records.push(...opRecords)
     const sessionId = targetSession.sessionId
-    const sessionCwd = targetSession.cwd
+    const sessionCwd = effectiveSession.cwd
     for (const rec of opRecords) {
       await this.observer.logOp(rec, callAgentId, sessionId, sessionCwd)
     }
