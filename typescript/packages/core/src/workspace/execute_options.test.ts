@@ -189,6 +189,7 @@ describe('execute({ signal }): mid-flight cancellation', () => {
 
   it('aborts between LIST stages', async () => {
     const ws = await makeWs()
+    const t0 = Date.now()
     const ac = new AbortController()
     setTimeout(() => ac.abort(), 100)
     await expect(
@@ -196,6 +197,31 @@ describe('execute({ signal }): mid-flight cancellation', () => {
         signal: ac.signal,
       }),
     ).rejects.toMatchObject({ name: 'AbortError' })
+    expect(Date.now() - t0).toBeLessThan(2000)
+    await ws.close()
+  })
+
+  it('aborts inside a while loop', async () => {
+    const ws = await makeWs()
+    const t0 = Date.now()
+    const ac = new AbortController()
+    setTimeout(() => ac.abort(), 100)
+    await expect(
+      ws.execute('while true; do sleep 1; done', { signal: ac.signal }),
+    ).rejects.toMatchObject({ name: 'AbortError' })
+    expect(Date.now() - t0).toBeLessThan(1500)
+    await ws.close()
+  })
+
+  it('aborts mid-pipeline', async () => {
+    const ws = await makeWs()
+    const t0 = Date.now()
+    const ac = new AbortController()
+    setTimeout(() => ac.abort(), 100)
+    await expect(
+      ws.execute('sleep 1 | sleep 1 | sleep 1', { signal: ac.signal }),
+    ).rejects.toMatchObject({ name: 'AbortError' })
+    expect(Date.now() - t0).toBeLessThan(1500)
     await ws.close()
   })
 })
