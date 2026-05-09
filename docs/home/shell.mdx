@@ -143,6 +143,37 @@ Both bindings support cooperative cancellation observed at recursion boundaries 
 | Many isolated commands sharing scoped state | `session_id=...` (Py) / `sessionId` (TS) | a separate terminal |
 | Persistent shell mutations | run without options | `cd /data; cmd` |
 
+## Supported bash syntax
+
+The shell is a tree-sitter-bash parser plus a custom executor. It implements the constructs LLMs reach for most often. What is not supported returns a clear, parseable error so an agent can self-correct on its next turn.
+
+### Supported
+
+- **Operators:** pipes `|`, `|&`; lists `&&`, `||`, `;`; background `&`.
+- **Redirects:** `>`, `>>`, `<`, `2>`, `2>&1`, `&>`, `&>>`, heredoc `<<`, herestring `<<<`.
+- **Substitutions:** command substitution `` `cmd` `` and `$(cmd)`; arithmetic `$((expr))`; parameter expansion `${VAR}`, `${VAR:-default}`, `${VAR%suffix}`, etc.; input-direction process substitution `<(cmd)`.
+- **Control flow:** `if`/`elif`/`else`/`fi`, `for`, `while`, `until`, `case`, `select`, `function name() {}`, `break`, `continue`, `return`.
+- **Grouping:** subshells `(cmd)`, compound `{ cmd; }`, negation `! cmd`.
+- **Builtins:** `cd`, `pwd`, `echo`, `printf`, `printenv`, `read`, `source`, `.`, `eval`, `export`, `unset`, `local`, `set`, `shift`, `trap` (no-op), `test`, `[`, `[[`, `true`, `false`, `sleep`, `xargs`, `timeout`, `bash`, `sh`, `python`, `python3`.
+- **Globs:** `*`, `?`, `[...]` resolved by the shell or pushed down to the resource.
+- **Comments:** `#`.
+
+### Unsupported (returns clear error)
+
+- **Job control:** `fg`, `bg`, `jobs`, `wait`, `disown`. Use the `--background` flag and `mirage job` CLI to manage long-running work.
+- **Shell internals:** `exec`, `complete`, `compgen`, `ulimit`.
+- **Output process substitution:** `>(cmd)` (the `<(cmd)` direction works).
+
+Each returns `exit_code 2` with stderr `mirage: unsupported builtin: <name>` or `mirage: unsupported: process substitution >(...)`.
+
+### Syntax errors
+
+Commands the parser cannot make sense of return `exit_code 2` with stderr `mirage: syntax error near '<token>'`. Earlier versions silently ran whatever fragment did parse; that no longer happens.
+
+### What `--background` is and isn't
+
+The daemon's `--background` flag detaches a job and returns a job id. It is not the same as the bash `&` operator, which the shell does support inline (`sleep 30 &`). Use `&` for in-shell job parallelism, `--background` (or `mirage job`) for long-lived work that should outlive the request.
+
 ## Agent Pattern
 
 Agent harnesses commonly fan out tool calls in parallel, each with its own `cwd`/`env`/`cancel`. The clone semantics make this race-free without per-call boilerplate.
