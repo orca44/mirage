@@ -366,6 +366,7 @@ class Workspace:
         if allowed_mounts is not None:
             normalized = {("/" + m.strip("/")) for m in allowed_mounts}
             normalized.add("/dev")
+            normalized.add("/_default")
             if self.observer is not None:
                 normalized.add("/" + self.observer.prefix.strip("/"))
             allowed_mounts = frozenset(normalized)

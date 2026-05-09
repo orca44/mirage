@@ -174,6 +174,47 @@ Commands the parser cannot make sense of return `exit_code 2` with stderr `mirag
 
 The daemon's `--background` flag detaches a job and returns a job id. It is not the same as the bash `&` operator, which the shell does support inline (`sleep 30 &`). Use `&` for in-shell job parallelism, `--background` (or `mirage job`) for long-lived work that should outlive the request.
 
+## Per-session mount capability
+
+A session can be created with an explicit allowlist of mount prefixes. Any command whose path resolves to a mount outside that list is rejected with `mirage: session 'agent' not allowed to access mount '/X'` and exit code 1. Default sessions (no allowlist) keep their current unrestricted behavior, so existing code is unaffected.
+
+This is a soft boundary, enforced inside the daemon process, not an OS or process-level isolation. Use it to shrink the blast radius of prompt-injection in multi-agent workspaces: a Slack-only agent cannot pivot to read `/linear`, `/github`, or any other mount it was not given.
+
+The check fires for every code path that reaches a mount: shell commands (`cat`, `ls`, ...), redirects (`>`, `<`), cross-mount `cp`/`mv`, `wget -O`, `curl -o`, command substitution `$(...)`, subshells `(...)`, pipes, `&&`/`||` chains, background jobs, and the programmatic `ws.ops.read/write/...` API. Two infrastructure prefixes are always allowed regardless of the allowlist: the observer prefix (`/.sessions`, where command history is recorded) and the cache mount (`/_default`, where stateless text-processing commands like `wc` live).
+
+<Tabs>
+  <Tab title="Python" icon="/images/python-logo.svg">
+    ```python
+    ws = Workspace({
+        "/s3": s3,
+        "/slack": slack,
+        "/linear": linear,
+    })
+
+    ws.create_session("slack-agent", allowed_mounts={"/slack"})
+    ws.create_session("data-agent", allowed_mounts={"/s3"})
+
+    await ws.execute("ls /slack", session_id="slack-agent")  # ok
+    await ws.execute("cat /linear/issues/SEC-42",
+                     session_id="slack-agent")
+    # exit_code=1, stderr=b"session 'slack-agent' not allowed to "
+    #                     b"access mount '/linear'\n"
+    ```
+  </Tab>
+  <Tab title="CLI" icon="terminal">
+    ```bash
+    # Repeat --mount (or -m) per allowed prefix
+    mirage session create demo --id slack-agent --mount /slack
+    mirage session create demo --id data-agent  -m /s3 -m /github
+
+    mirage execute -w demo -s slack-agent -c "cat /linear/issues/SEC-42"
+    # mirage: session 'slack-agent' not allowed to access mount '/linear'
+    ```
+  </Tab>
+</Tabs>
+
+The allowlist is a property of the session, so it covers every command issued under that `session_id`, including subshells, pipelines, and recursive `bash -c '...'`. It does not change `MountMode`: a write to a mount in the allowlist is still rejected if the mount is `READ`. The two checks compose.
+
 ## Agent Pattern
 
 Agent harnesses commonly fan out tool calls in parallel, each with its own `cwd`/`env`/`cancel`. The clone semantics make this race-free without per-call boilerplate.
