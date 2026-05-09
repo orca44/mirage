@@ -29,14 +29,33 @@ def parse(command: str) -> tree_sitter.Node:
 
 
 _BASH_KEYWORDS = frozenset({
-    "if", "then", "else", "elif", "fi",
-    "for", "while", "until", "do", "done",
-    "case", "esac", "in", "function", "select",
+    "if",
+    "then",
+    "else",
+    "elif",
+    "fi",
+    "for",
+    "while",
+    "until",
+    "do",
+    "done",
+    "case",
+    "esac",
+    "in",
+    "function",
+    "select",
 })
 
 _STRUCTURAL_TOKENS = frozenset({
-    "(", ")", "{", "}", "[", "]",
-    '"', "'", "`",
+    "(",
+    ")",
+    "{",
+    "}",
+    "[",
+    "]",
+    '"',
+    "'",
+    "`",
 })
 
 

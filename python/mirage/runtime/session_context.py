@@ -60,6 +60,5 @@ def assert_mount_allowed(mount_prefix: str) -> None:
     norm = "/" + mount_prefix.strip("/") if mount_prefix.strip("/") else "/"
     if norm == "/" or norm in sess.allowed_mounts:
         return
-    raise PermissionError(
-        f"session {sess.session_id!r} not allowed to access "
-        f"mount {norm!r}")
+    raise PermissionError(f"session {sess.session_id!r} not allowed to access "
+                          f"mount {norm!r}")

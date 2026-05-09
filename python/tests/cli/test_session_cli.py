@@ -13,7 +13,6 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from contextlib import contextmanager
-from unittest.mock import MagicMock
 
 from typer.testing import CliRunner
 
@@ -62,7 +61,10 @@ def test_session_create_passes_mount_flags():
     with _patched_client(fake):
         result = CliRunner().invoke(
             session_cli.app,
-            ["create", "demo", "--id", "agent", "-m", "/s3", "--mount", "/slack"],
+            [
+                "create", "demo", "--id", "agent", "-m", "/s3", "--mount",
+                "/slack"
+            ],
         )
     assert result.exit_code == 0, result.output
     assert fake.last_body == {

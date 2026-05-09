@@ -52,9 +52,9 @@ from mirage.workspace.native import native_exec
 from mirage.workspace.node import execute_node as _execute_node
 from mirage.workspace.node import provision_node
 from mirage.workspace.session import (Session, SessionManager,
-                                       assert_mount_allowed,
-                                       reset_current_session,
-                                       set_current_session)
+                                      assert_mount_allowed,
+                                      reset_current_session,
+                                      set_current_session)
 from mirage.workspace.snapshot import (apply_state_dict, build_mount_args,
                                        norm_mount_prefix, read_tar)
 from mirage.workspace.snapshot import snapshot as _write_snapshot
@@ -359,9 +359,10 @@ class Workspace:
 
     # ── session lifecycle ──────────────────────────────────────────────────
 
-    def create_session(self,
-                       session_id: str,
-                       allowed_mounts: frozenset[str] | None = None) -> Session:
+    def create_session(
+            self,
+            session_id: str,
+            allowed_mounts: frozenset[str] | None = None) -> Session:
         if allowed_mounts is not None:
             normalized = {("/" + m.strip("/")) for m in allowed_mounts}
             normalized.add("/dev")

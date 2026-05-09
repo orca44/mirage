@@ -24,8 +24,8 @@ from mirage.observe import OpRecord
 from mirage.observe.context import set_virtual_prefix
 from mirage.ops.config import OpsMount
 from mirage.ops.registry import OpsRegistry, RegisteredOp
-from mirage.types import FileStat, MountMode, PathSpec
 from mirage.runtime import assert_mount_allowed
+from mirage.types import FileStat, MountMode, PathSpec
 
 
 class Ops:

@@ -661,11 +661,8 @@ async def _dispatch_command_body(
             direction = p.children[0].type if p.children else ""
             if direction == ">(":
                 err = b"mirage: unsupported: process substitution >(...)\n"
-                return None, IOResult(
-                    exit_code=2,
-                    stderr=err), ExecutionNode(command=name or "process_sub",
-                                               exit_code=2,
-                                               stderr=err)
+                return None, IOResult(exit_code=2, stderr=err), ExecutionNode(
+                    command=name or "process_sub", exit_code=2, stderr=err)
             inner_cmds = [c for c in p.named_children if c.type == NT.COMMAND]
             if inner_cmds:
                 io_ps = await execute_fn(get_text(inner_cmds[0]),
