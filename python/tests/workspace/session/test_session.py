@@ -102,3 +102,13 @@ def test_session_independent_envs():
     s2 = Session(session_id="b")
     s1.env["X"] = "1"
     assert "X" not in s2.env
+
+
+def test_session_allowed_mounts_default_none():
+    s = Session(session_id="s")
+    assert s.allowed_mounts is None
+
+
+def test_session_allowed_mounts_set():
+    s = Session(session_id="s", allowed_mounts=frozenset({"/s3", "/slack"}))
+    assert s.allowed_mounts == frozenset({"/s3", "/slack"})
