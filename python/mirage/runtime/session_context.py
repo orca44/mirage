@@ -13,16 +13,18 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from contextvars import ContextVar, Token
+from typing import TYPE_CHECKING
 
-from mirage.workspace.session.session import Session
+if TYPE_CHECKING:
+    from mirage.workspace.session.session import Session
 
-_current_session: ContextVar[Session | None] = ContextVar(
+_current_session: ContextVar["Session | None"] = ContextVar(
     "mirage_current_session",
     default=None,
 )
 
 
-def set_current_session(session: Session | None) -> Token:
+def set_current_session(session: "Session | None") -> Token:
     """Bind ``session`` to the current async context."""
     return _current_session.set(session)
 
@@ -32,7 +34,7 @@ def reset_current_session(token: Token) -> None:
     _current_session.reset(token)
 
 
-def get_current_session() -> Session | None:
+def get_current_session() -> "Session | None":
     """Return the session bound to the current async context, if any."""
     return _current_session.get()
 
@@ -52,7 +54,7 @@ def assert_mount_allowed(mount_prefix: str) -> None:
     Raises:
         PermissionError: the mount lies outside the session's allowlist.
     """
-    sess = get_current_session()
+    sess = _current_session.get()
     if sess is None or sess.allowed_mounts is None:
         return
     norm = "/" + mount_prefix.strip("/") if mount_prefix.strip("/") else "/"

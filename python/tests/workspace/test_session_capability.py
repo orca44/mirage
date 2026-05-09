@@ -81,3 +81,26 @@ def test_observer_prefix_always_allowed():
     io = asyncio.run(run())
     assert io.exit_code == 0, (
         f"observer prefix should always be readable, got {io}")
+
+
+def test_ops_blocks_programmatic_read_outside_allowlist():
+    import pytest
+
+    from mirage.workspace.session import (reset_current_session,
+                                          set_current_session)
+
+    a = _seed("x.txt", b"public")
+    b = _seed("secret.txt", b"SECRET")
+    ws = Workspace({"/a": a, "/b": b})
+    sess = ws.create_session("agent", allowed_mounts=frozenset({"/a"}))
+
+    async def run():
+        token = set_current_session(sess)
+        try:
+            assert await ws.ops.read("/a/x.txt") == b"public"
+            with pytest.raises(PermissionError, match="not allowed"):
+                await ws.ops.read("/b/secret.txt")
+        finally:
+            reset_current_session(token)
+
+    asyncio.run(run())
