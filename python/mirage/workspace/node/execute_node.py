@@ -654,11 +654,21 @@ async def _dispatch_command_body(
                 stdin = content.encode() + b"\n"
                 break
 
-    # Process substitution: <(cmd) → execute inner cmd, use output as stdin
+    # Process substitution: <(cmd) feeds inner stdout as stdin.
+    # Output direction >(cmd) is unsupported; reject early so the
+    # caller sees a capability gap rather than a silent no-op.
     proc_sub_parts = []
     clean_parts = []
     for p in parts:
         if hasattr(p, "type") and p.type == NT.PROCESS_SUBSTITUTION:
+            direction = p.children[0].type if p.children else ""
+            if direction == ">(":
+                err = b"mirage: unsupported: process substitution >(...)\n"
+                return None, IOResult(
+                    exit_code=2,
+                    stderr=err), ExecutionNode(command=name or "process_sub",
+                                               exit_code=2,
+                                               stderr=err)
             inner_cmds = [c for c in p.named_children if c.type == NT.COMMAND]
             if inner_cmds:
                 io_ps = await execute_fn(get_text(inner_cmds[0]),
