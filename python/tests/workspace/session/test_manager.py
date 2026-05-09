@@ -122,3 +122,15 @@ def test_manager_lock_for():
     mgr.create("s1")
     lock2 = mgr.lock_for("s1")
     assert lock2 is not lock
+
+
+def test_manager_create_with_allowed_mounts():
+    mgr = SessionManager("default")
+    s = mgr.create("agent", allowed_mounts=frozenset({"/s3", "/slack"}))
+    assert s.allowed_mounts == frozenset({"/s3", "/slack"})
+
+
+def test_manager_create_default_unrestricted():
+    mgr = SessionManager("default")
+    s = mgr.create("worker")
+    assert s.allowed_mounts is None

@@ -356,8 +356,11 @@ class Workspace:
 
     # ── session lifecycle ──────────────────────────────────────────────────
 
-    def create_session(self, session_id: str) -> Session:
-        return self._session_mgr.create(session_id)
+    def create_session(self,
+                       session_id: str,
+                       allowed_mounts: frozenset[str] | None = None) -> Session:
+        return self._session_mgr.create(session_id,
+                                        allowed_mounts=allowed_mounts)
 
     def get_session(self, session_id: str) -> Session:
         return self._session_mgr.get(session_id)
