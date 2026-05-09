@@ -29,7 +29,7 @@ from mirage.workspace.executor.cross_mount import (handle_cross_mount,
 from mirage.workspace.executor.jobs import (handle_jobs, handle_kill,
                                             handle_ps, handle_wait)
 from mirage.workspace.mount import MountRegistry
-from mirage.workspace.session import Session
+from mirage.workspace.session import Session, assert_mount_allowed
 from mirage.workspace.types import ExecutionNode
 
 _JOB_BUILTINS = frozenset({"wait", "fg", "kill", "jobs", "ps"})
@@ -638,6 +638,18 @@ async def handle_command(
             exit_code=127,
             stderr=f"{cmd_name}: command not found".encode(),
         ), ExecutionNode(command=cmd_str, exit_code=127)
+
+    try:
+        assert_mount_allowed(mount.prefix)
+        for ps in path_scopes:
+            target = registry.mount_for(ps.original)
+            assert_mount_allowed(target.prefix)
+    except PermissionError as exc:
+        err = f"{exc}\n".encode()
+        return None, IOResult(exit_code=1,
+                              stderr=err), ExecutionNode(command=cmd_str,
+                                                         exit_code=1,
+                                                         stderr=err)
 
     # Parse flags upstream — mount receives clean args
     paths, texts, flag_kwargs = _parse_flags(parts[1:], mount, cmd_name,

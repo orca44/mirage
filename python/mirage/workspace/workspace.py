@@ -51,7 +51,10 @@ from mirage.workspace.mount import Mount, MountRegistry
 from mirage.workspace.native import native_exec
 from mirage.workspace.node import execute_node as _execute_node
 from mirage.workspace.node import provision_node
-from mirage.workspace.session import Session, SessionManager
+from mirage.workspace.session import (Session, SessionManager,
+                                       assert_mount_allowed,
+                                       reset_current_session,
+                                       set_current_session)
 from mirage.workspace.snapshot import (apply_state_dict, build_mount_args,
                                        norm_mount_prefix, read_tar)
 from mirage.workspace.snapshot import snapshot as _write_snapshot
@@ -359,6 +362,12 @@ class Workspace:
     def create_session(self,
                        session_id: str,
                        allowed_mounts: frozenset[str] | None = None) -> Session:
+        if allowed_mounts is not None:
+            normalized = {("/" + m.strip("/")) for m in allowed_mounts}
+            normalized.add("/dev")
+            if self.observer is not None:
+                normalized.add("/" + self.observer.prefix.strip("/"))
+            allowed_mounts = frozenset(normalized)
         return self._session_mgr.create(session_id,
                                         allowed_mounts=allowed_mounts)
 
@@ -379,6 +388,7 @@ class Workspace:
     async def dispatch(self, op: str, path: PathSpec,
                        **kwargs: Any) -> tuple[Any, IOResult]:
         mount = self._registry.mount_for(path.original)
+        assert_mount_allowed(mount.prefix)
         cacheable = mount.resource.is_remote is True
 
         if cacheable and op in _DISPATCH_READ_OPS:
@@ -564,6 +574,7 @@ class Workspace:
         async def _exec_for_recursion(cmd: str, **opts: Any) -> Any:
             return await self.execute(cmd, cancel=cancel, **opts)
 
+        session_token = set_current_session(effective_session)
         try:
             ast = parse(command)
             offending = find_syntax_error(ast)
@@ -610,5 +621,6 @@ class Workspace:
                                       exit_code=1)
             return io
         finally:
+            reset_current_session(session_token)
             await self._record_execution(command, io, exec_node, agent_id,
                                          session_id, stdin, provision)

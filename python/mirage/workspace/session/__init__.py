@@ -12,7 +12,18 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from mirage.workspace.session.context import (assert_mount_allowed,
+                                               get_current_session,
+                                               reset_current_session,
+                                               set_current_session)
 from mirage.workspace.session.manager import SessionManager
 from mirage.workspace.session.session import Session
 
-__all__ = ["Session", "SessionManager"]
+__all__ = [
+    "Session",
+    "SessionManager",
+    "assert_mount_allowed",
+    "get_current_session",
+    "reset_current_session",
+    "set_current_session",
+]
