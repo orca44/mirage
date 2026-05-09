@@ -101,6 +101,28 @@ async def test_delete_unknown_session_404():
 
 
 @pytest.mark.asyncio
+async def test_create_session_with_allowed_mounts():
+    app = build_app(idle_grace_seconds=10.0)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport,
+                           base_url="http://test") as client:
+        wid = await _create_workspace(client)
+        r = await client.post(
+            f"/v1/workspaces/{wid}/sessions",
+            json={
+                "session_id": "agent_a",
+                "allowed_mounts": ["/"],
+            },
+        )
+        assert r.status_code == 201, r.text
+
+        registry = app.state.registry
+        sess = registry.get(wid).runner.ws.get_session("agent_a")
+        assert sess.allowed_mounts is not None
+        assert "/" in sess.allowed_mounts
+
+
+@pytest.mark.asyncio
 async def test_session_isolated_per_workspace():
     app = build_app(idle_grace_seconds=10.0)
     transport = ASGITransport(app=app)
