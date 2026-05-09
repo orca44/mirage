@@ -365,13 +365,27 @@ class Workspace:
             allowed_mounts: frozenset[str] | None = None) -> Session:
         if allowed_mounts is not None:
             normalized = {("/" + m.strip("/")) for m in allowed_mounts}
-            normalized.add("/dev")
-            normalized.add("/_default")
-            if self.observer is not None:
-                normalized.add("/" + self.observer.prefix.strip("/"))
+            normalized.update(self._infrastructure_mount_prefixes())
             allowed_mounts = frozenset(normalized)
         return self._session_mgr.create(session_id,
                                         allowed_mounts=allowed_mounts)
+
+    def _infrastructure_mount_prefixes(self) -> set[str]:
+        """Mount prefixes a session is always allowed to touch.
+
+        The cache mount (where text-processing commands like ``wc``
+        without a path argument resolve), the device mount, and the
+        observer log are infrastructure: they hold no user
+        credentials, and rejecting them would break common shell
+        idioms or audit logging.
+        """
+        prefixes = {"/dev"}
+        default_mount = self._registry.default_mount
+        if default_mount is not None:
+            prefixes.add("/" + default_mount.prefix.strip("/"))
+        if self.observer is not None:
+            prefixes.add("/" + self.observer.prefix.strip("/"))
+        return prefixes
 
     def get_session(self, session_id: str) -> Session:
         return self._session_mgr.get(session_id)
