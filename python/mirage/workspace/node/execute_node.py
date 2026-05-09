@@ -59,6 +59,18 @@ from mirage.workspace.executor.builtins import (  # isort: skip
     handle_sleep, handle_source, handle_test, handle_trap, handle_unset,
     handle_whoami)
 
+_UNSUPPORTED_BUILTINS = frozenset({
+    "fg",
+    "bg",
+    "jobs",
+    "wait",
+    "disown",
+    "exec",
+    "complete",
+    "compgen",
+    "ulimit",
+})
+
 
 async def execute_node(
     dispatch: Callable,
@@ -685,6 +697,17 @@ async def _dispatch_command_body(
     # each resource can handle pattern pushdown.
     resolved = await resolve_globs(classified, registry, text_args=text_args)
     expanded = [p.original if isinstance(p, PathSpec) else p for p in resolved]
+
+    # ── unsupported bash builtins ──────────────
+    # Constructs the parser accepts but the executor cannot honor.
+    # Returning a clear error lets LLMs detect a capability gap instead
+    # of treating it as a missing binary or a silent no-op.
+    if name in _UNSUPPORTED_BUILTINS:
+        err = f"mirage: unsupported builtin: {name}\n".encode()
+        return None, IOResult(exit_code=2,
+                              stderr=err), ExecutionNode(command=name,
+                                                         exit_code=2,
+                                                         stderr=err)
 
     # ── shell builtins ──────────────────────────
     if name == SB.PWD:
