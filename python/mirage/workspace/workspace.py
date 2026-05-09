@@ -145,7 +145,7 @@ class Workspace:
         self._registry.mount(observe_prefix, observe_resource, MountMode.READ)
 
         self._ops = Ops(self._registry.ops_mounts(),
-                        on_write=self._invalidate_cache_if_remote,
+                        on_write=self._invalidate_after_write_by_path,
                         observer=self.observer,
                         agent_id=agent_id,
                         session_id=session_id)
@@ -456,18 +456,23 @@ class Workspace:
             return False
         return mount.resource.is_remote is True
 
-    async def _invalidate_cache_if_remote(self, path: str) -> None:
-        if self._is_cacheable_path(path):
-            await self._cache.remove(path)
+    async def _invalidate_after_write_by_path(self, path: str) -> None:
+        """Drop file-cache + stale parent index after a write to `path`.
+
+        Single source of truth for post-write invalidation. Called from
+        both `Workspace.dispatch()` and `Ops._call(write=True)` so a
+        write through any code path sees the same invalidation rules:
+        file cache is dropped only for remote-backed mounts, and the
+        parent directory index is dirtied for any mount that maintains
+        an index. No-op for paths that resolve to no known mount.
+        """
+        try:
+            mount = self._registry.mount_for(path)
+        except ValueError:
+            return
+        await self._invalidate_after_write(mount, path)
 
     async def _invalidate_after_write(self, mount: Mount, path: str) -> None:
-        """Drop file-cache entry and stale parent index after a write.
-
-        Closes the gap where dispatch-level writes (cross-mount cp,
-        wget -O, curl -o, redirect) would update the file cache but
-        leave readdir/stat returning the previously cached parent
-        directory listing.
-        """
         if mount.resource.is_remote is True:
             await self._cache.remove(path)
         idx = getattr(mount.resource, "index", None)
