@@ -399,8 +399,8 @@ class Workspace:
                     return cached, IOResult(reads={path.original: cached})
 
         result = await mount.execute_op(op, path.original, **kwargs)
-        if cacheable and op in _DISPATCH_WRITE_OPS:
-            await self._cache.remove(path.original)
+        if op in _DISPATCH_WRITE_OPS:
+            await self._invalidate_after_write(mount, path.original)
         return result, IOResult()
 
     async def stat(self, path: str) -> FileStat:
@@ -430,6 +430,22 @@ class Workspace:
     async def _invalidate_cache_if_remote(self, path: str) -> None:
         if self._is_cacheable_path(path):
             await self._cache.remove(path)
+
+    async def _invalidate_after_write(self, mount: Mount, path: str) -> None:
+        """Drop file-cache entry and stale parent index after a write.
+
+        Closes the gap where dispatch-level writes (cross-mount cp,
+        wget -O, curl -o, redirect) would update the file cache but
+        leave readdir/stat returning the previously cached parent
+        directory listing.
+        """
+        if mount.resource.is_remote is True:
+            await self._cache.remove(path)
+        idx = getattr(mount.resource, "index", None)
+        if idx is not None:
+            parent = path.rsplit("/", 1)[0] or "/"
+            await idx.invalidate_dir(parent)
+            await idx.invalidate_dir(parent + "/")
 
     async def _invalidate_index_dirs(self, io: IOResult) -> None:
         dirs_seen: set[str] = set()

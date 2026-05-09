@@ -60,10 +60,7 @@ from mirage.workspace.executor.builtins import (  # isort: skip
     handle_whoami)
 
 _UNSUPPORTED_BUILTINS = frozenset({
-    "fg",
     "bg",
-    "jobs",
-    "wait",
     "disown",
     "exec",
     "complete",

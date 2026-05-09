@@ -22,10 +22,7 @@ from mirage.workspace import Workspace
 
 
 @pytest.mark.parametrize("name", [
-    "fg",
     "bg",
-    "jobs",
-    "wait",
     "disown",
     "exec",
     "complete",

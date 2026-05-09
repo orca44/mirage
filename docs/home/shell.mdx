@@ -160,7 +160,7 @@ The shell is a tree-sitter-bash parser plus a custom executor. It implements the
 
 ### Unsupported (returns clear error)
 
-- **Job control:** `fg`, `bg`, `jobs`, `wait`, `disown`. Use the `--background` flag and `mirage job` CLI to manage long-running work.
+- **Job control:** `bg`, `disown`. (`fg`, `jobs`, `wait`, `kill`, `ps` work; use the `--background` flag and `mirage job` CLI for long-running work.)
 - **Shell internals:** `exec`, `complete`, `compgen`, `ulimit`.
 - **Output process substitution:** `>(cmd)` (the `<(cmd)` direction works).
 

@@ -28,8 +28,39 @@ def parse(command: str) -> tree_sitter.Node:
     return tree.root_node
 
 
+_BASH_KEYWORDS = frozenset({
+    "if", "then", "else", "elif", "fi",
+    "for", "while", "until", "do", "done",
+    "case", "esac", "in", "function", "select",
+})
+
+_STRUCTURAL_TOKENS = frozenset({
+    "(", ")", "{", "}", "[", "]",
+    '"', "'", "`",
+})
+
+
+def _is_structural_error(node: tree_sitter.Node) -> bool:
+    """True if an ERROR node represents a real syntactic problem.
+
+    Tree-sitter occasionally emits ERROR nodes for stray statement
+    separators that bash itself accepts (notably ``& ;``). A real
+    syntax error contains a bash keyword, a bracket / quote token,
+    or a named subtree the parser tried to recover; stand-alone
+    statement separators (``;``, ``&``, ``|``) are not enough.
+    """
+    for child in node.children:
+        if child.is_named:
+            return True
+        if child.type in _BASH_KEYWORDS:
+            return True
+        if child.type in _STRUCTURAL_TOKENS:
+            return True
+    return False
+
+
 def find_syntax_error(node: tree_sitter.Node) -> str | None:
-    """Locate the first ERROR or missing node in a parsed AST.
+    """Locate a top-level structural syntax error in a parsed AST.
 
     Args:
         node (tree_sitter.Node): root node from parse().
@@ -39,13 +70,11 @@ def find_syntax_error(node: tree_sitter.Node) -> str | None:
     """
     if not node.has_error:
         return None
-    stack: list[tree_sitter.Node] = [node]
-    while stack:
-        current = stack.pop()
-        if current.type == "ERROR" or current.is_missing:
-            text = current.text
+    for child in node.children:
+        if child.is_missing:
+            text = child.text
             return text.decode(errors="replace") if text else ""
-        for child in current.children:
-            if child.has_error:
-                stack.append(child)
-    return ""
+        if child.type == "ERROR" and _is_structural_error(child):
+            text = child.text
+            return text.decode(errors="replace") if text else ""
+    return None
