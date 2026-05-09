@@ -26,3 +26,26 @@ def parse(command: str) -> tree_sitter.Node:
     """
     tree = TS_PARSER.parse(command.encode())
     return tree.root_node
+
+
+def find_syntax_error(node: tree_sitter.Node) -> str | None:
+    """Locate the first ERROR or missing node in a parsed AST.
+
+    Args:
+        node (tree_sitter.Node): root node from parse().
+
+    Returns:
+        str | None: text of the offending region, or None if the AST is clean.
+    """
+    if not node.has_error:
+        return None
+    stack: list[tree_sitter.Node] = [node]
+    while stack:
+        current = stack.pop()
+        if current.type == "ERROR" or current.is_missing:
+            text = current.text
+            return text.decode(errors="replace") if text else ""
+        for child in current.children:
+            if child.has_error:
+                stack.append(child)
+    return ""

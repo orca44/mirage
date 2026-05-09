@@ -41,7 +41,7 @@ from mirage.resource.base import BaseResource
 from mirage.resource.ram import RAMResource
 from mirage.shell.barrier import BarrierPolicy, apply_barrier
 from mirage.shell.job_table import JobTable
-from mirage.shell.parse import parse
+from mirage.shell.parse import find_syntax_error, parse
 from mirage.types import (DEFAULT_AGENT_ID, DEFAULT_SESSION_ID,
                           ConsistencyPolicy, FileStat, MountMode, PathSpec)
 from mirage.workspace.abort import MirageAbortError
@@ -547,6 +547,16 @@ class Workspace:
 
         try:
             ast = parse(command)
+            offending = find_syntax_error(ast)
+            if offending is not None:
+                snippet = offending.strip()[:40]
+                err = (f"mirage: syntax error near {snippet!r}\n".encode()
+                       if snippet else b"mirage: syntax error in command\n")
+                io = IOResult(exit_code=2, stderr=err)
+                exec_node = ExecutionNode(command=command,
+                                          stderr=err,
+                                          exit_code=2)
+                return io
             if provision:
                 return await provision_node(self._registry, self.dispatch,
                                             _exec_for_recursion, ast,
