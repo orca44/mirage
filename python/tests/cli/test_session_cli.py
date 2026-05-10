@@ -12,11 +12,14 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import re
 from contextlib import contextmanager
 
 from typer.testing import CliRunner
 
 from mirage.cli import session as session_cli
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 
 class _FakeResponse:
@@ -95,4 +98,5 @@ def test_session_create_without_id_or_mount_sends_empty_body():
 def test_session_create_help_lists_mount_flag():
     result = CliRunner().invoke(session_cli.app, ["create", "--help"])
     assert result.exit_code == 0
-    assert "--mount" in result.output
+    plain = _ANSI_RE.sub("", result.output)
+    assert "--mount" in plain

@@ -14,8 +14,12 @@
 
 import asyncio
 
+import pytest
+
 from mirage.resource.ram import RAMResource
+from mirage.types import MountMode
 from mirage.workspace import Workspace
+from mirage.workspace.session import reset_current_session, set_current_session
 
 
 def _seed(name: str, body: bytes) -> RAMResource:
@@ -58,7 +62,6 @@ def test_default_session_unrestricted():
 
 def test_allowed_session_can_write_to_its_mount():
     a = _seed("x.txt", b"hi")
-    from mirage.types import MountMode
     ws = Workspace({"/a": (a, MountMode.WRITE)}, mode=MountMode.WRITE)
     ws.create_session("agent", allowed_mounts=frozenset({"/a"}))
 
@@ -84,11 +87,6 @@ def test_observer_prefix_always_allowed():
 
 
 def test_ops_blocks_programmatic_read_outside_allowlist():
-    import pytest
-
-    from mirage.workspace.session import (reset_current_session,
-                                          set_current_session)
-
     a = _seed("x.txt", b"public")
     b = _seed("secret.txt", b"SECRET")
     ws = Workspace({"/a": a, "/b": b})
@@ -107,11 +105,13 @@ def test_ops_blocks_programmatic_read_outside_allowlist():
 
 
 def _two_mounts_with_secret() -> Workspace:
-    from mirage.types import MountMode
     a = _seed("x.txt", b"public-A\n")
     a._store.files["/y.txt"] = b"public-B\n"
     b = _seed("secret.txt", b"SECRET-FROM-B\n")
-    ws = Workspace({"/a": (a, MountMode.WRITE), "/b": (b, MountMode.WRITE)},
+    ws = Workspace({
+        "/a": (a, MountMode.WRITE),
+        "/b": (b, MountMode.WRITE)
+    },
                    mode=MountMode.WRITE)
     ws.create_session("agent", allowed_mounts=frozenset({"/a"}))
     return ws
