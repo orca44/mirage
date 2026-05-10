@@ -17,8 +17,8 @@ import type { Session } from '../workspace/session/session.ts'
 
 const sessionStorage = createAsyncContext<Session>()
 
-export function runWithSession<T>(session: Session, fn: () => T | Promise<T>): T | Promise<T> {
-  return sessionStorage.run(session, fn)
+export function runWithSession<T>(session: Session, fn: () => Promise<T>): Promise<T> {
+  return Promise.resolve(sessionStorage.run(session, fn))
 }
 
 export function getCurrentSession(): Session | null {
