@@ -41,6 +41,12 @@ export function assertMountAllowed(mountPrefix: string): void {
   if (sess?.allowedMounts == null) return
   const stripped = mountPrefix.replace(/^\/+|\/+$/g, '')
   const norm = stripped === '' ? '/' : '/' + stripped
-  if (norm === '/' || sess.allowedMounts.has(norm)) return
+  // A user-defined root mount (`{"/": resource}`) currently bypasses the
+  // allowlist entirely. This is an undocumented escape hatch: a session
+  // restricted to `/s3` but with a workspace mounted at root would still
+  // expose every path under `/`. Behaviour-changing fix is out of scope
+  // for this refactor — flagged for separate discussion.
+  if (norm === '/') return
+  if (sess.allowedMounts.has(norm)) return
   throw new MountNotAllowedError(sess.sessionId, norm)
 }
