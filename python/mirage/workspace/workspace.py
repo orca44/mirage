@@ -41,7 +41,7 @@ from mirage.resource.base import BaseResource
 from mirage.resource.ram import RAMResource
 from mirage.shell.barrier import BarrierPolicy, apply_barrier
 from mirage.shell.job_table import JobTable
-from mirage.shell.parse import parse
+from mirage.shell.parse import find_syntax_error, parse
 from mirage.types import (DEFAULT_AGENT_ID, DEFAULT_SESSION_ID,
                           ConsistencyPolicy, FileStat, MountMode, PathSpec)
 from mirage.workspace.abort import MirageAbortError
@@ -51,7 +51,10 @@ from mirage.workspace.mount import Mount, MountRegistry
 from mirage.workspace.native import native_exec
 from mirage.workspace.node import execute_node as _execute_node
 from mirage.workspace.node import provision_node
-from mirage.workspace.session import Session, SessionManager
+from mirage.workspace.session import (Session, SessionManager,
+                                      assert_mount_allowed,
+                                      reset_current_session,
+                                      set_current_session)
 from mirage.workspace.snapshot import (apply_state_dict, build_mount_args,
                                        norm_mount_prefix, read_tar)
 from mirage.workspace.snapshot import snapshot as _write_snapshot
@@ -142,7 +145,7 @@ class Workspace:
         self._registry.mount(observe_prefix, observe_resource, MountMode.READ)
 
         self._ops = Ops(self._registry.ops_mounts(),
-                        on_write=self._invalidate_cache_if_remote,
+                        on_write=self._invalidate_after_write_by_path,
                         observer=self.observer,
                         agent_id=agent_id,
                         session_id=session_id)
@@ -356,8 +359,33 @@ class Workspace:
 
     # ── session lifecycle ──────────────────────────────────────────────────
 
-    def create_session(self, session_id: str) -> Session:
-        return self._session_mgr.create(session_id)
+    def create_session(
+            self,
+            session_id: str,
+            allowed_mounts: frozenset[str] | None = None) -> Session:
+        if allowed_mounts is not None:
+            normalized = {("/" + m.strip("/")) for m in allowed_mounts}
+            normalized.update(self._infrastructure_mount_prefixes())
+            allowed_mounts = frozenset(normalized)
+        return self._session_mgr.create(session_id,
+                                        allowed_mounts=allowed_mounts)
+
+    def _infrastructure_mount_prefixes(self) -> set[str]:
+        """Mount prefixes a session is always allowed to touch.
+
+        The cache mount (where text-processing commands like ``wc``
+        without a path argument resolve), the device mount, and the
+        observer log are infrastructure: they hold no user
+        credentials, and rejecting them would break common shell
+        idioms or audit logging.
+        """
+        prefixes = {"/dev"}
+        default_mount = self._registry.default_mount
+        if default_mount is not None:
+            prefixes.add("/" + default_mount.prefix.strip("/"))
+        if self.observer is not None:
+            prefixes.add("/" + self.observer.prefix.strip("/"))
+        return prefixes
 
     def get_session(self, session_id: str) -> Session:
         return self._session_mgr.get(session_id)
@@ -376,6 +404,7 @@ class Workspace:
     async def dispatch(self, op: str, path: PathSpec,
                        **kwargs: Any) -> tuple[Any, IOResult]:
         mount = self._registry.mount_for(path.original)
+        assert_mount_allowed(mount.prefix)
         cacheable = mount.resource.is_remote is True
 
         if cacheable and op in _DISPATCH_READ_OPS:
@@ -399,8 +428,8 @@ class Workspace:
                     return cached, IOResult(reads={path.original: cached})
 
         result = await mount.execute_op(op, path.original, **kwargs)
-        if cacheable and op in _DISPATCH_WRITE_OPS:
-            await self._cache.remove(path.original)
+        if op in _DISPATCH_WRITE_OPS:
+            await self._invalidate_after_write(mount, path.original)
         return result, IOResult()
 
     async def stat(self, path: str) -> FileStat:
@@ -427,9 +456,30 @@ class Workspace:
             return False
         return mount.resource.is_remote is True
 
-    async def _invalidate_cache_if_remote(self, path: str) -> None:
-        if self._is_cacheable_path(path):
+    async def _invalidate_after_write_by_path(self, path: str) -> None:
+        """Drop file-cache + stale parent index after a write to `path`.
+
+        Single source of truth for post-write invalidation. Called from
+        both `Workspace.dispatch()` and `Ops._call(write=True)` so a
+        write through any code path sees the same invalidation rules:
+        file cache is dropped only for remote-backed mounts, and the
+        parent directory index is dirtied for any mount that maintains
+        an index. No-op for paths that resolve to no known mount.
+        """
+        try:
+            mount = self._registry.mount_for(path)
+        except ValueError:
+            return
+        await self._invalidate_after_write(mount, path)
+
+    async def _invalidate_after_write(self, mount: Mount, path: str) -> None:
+        if mount.resource.is_remote is True:
             await self._cache.remove(path)
+        idx = getattr(mount.resource, "index", None)
+        if idx is not None:
+            parent = path.rsplit("/", 1)[0] or "/"
+            await idx.invalidate_dir(parent)
+            await idx.invalidate_dir(parent + "/")
 
     async def _invalidate_index_dirs(self, io: IOResult) -> None:
         dirs_seen: set[str] = set()
@@ -545,8 +595,19 @@ class Workspace:
         async def _exec_for_recursion(cmd: str, **opts: Any) -> Any:
             return await self.execute(cmd, cancel=cancel, **opts)
 
+        session_token = set_current_session(effective_session)
         try:
             ast = parse(command)
+            offending = find_syntax_error(ast)
+            if offending is not None:
+                snippet = offending.strip()[:40]
+                err = (f"mirage: syntax error near {snippet!r}\n".encode()
+                       if snippet else b"mirage: syntax error in command\n")
+                io = IOResult(exit_code=2, stderr=err)
+                exec_node = ExecutionNode(command=command,
+                                          stderr=err,
+                                          exit_code=2)
+                return io
             if provision:
                 return await provision_node(self._registry, self.dispatch,
                                             _exec_for_recursion, ast,
@@ -581,5 +642,6 @@ class Workspace:
                                       exit_code=1)
             return io
         finally:
+            reset_current_session(session_token)
             await self._record_execution(command, io, exec_node, agent_id,
                                          session_id, stdin, provision)

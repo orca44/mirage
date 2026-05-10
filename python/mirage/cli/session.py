@@ -26,10 +26,19 @@ def create_cmd(
     session_id: str | None = typer.Option(None,
                                           "--id",
                                           help="Explicit session id."),
+    mount: list[str] = typer.Option(
+        [],
+        "--mount",
+        "-m",
+        help=("Restrict this session to the listed mount prefix. "
+              "Repeat to allow multiple mounts; omit for unrestricted."),
+    ),
 ) -> None:
     body: dict = {}
     if session_id:
         body["session_id"] = session_id
+    if mount:
+        body["allowed_mounts"] = mount
     with make_client() as client:
         client.ensure_running(allow_spawn=False)
         r = client.request("POST",

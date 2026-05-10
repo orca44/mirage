@@ -24,6 +24,7 @@ from mirage.observe import OpRecord
 from mirage.observe.context import set_virtual_prefix
 from mirage.ops.config import OpsMount
 from mirage.ops.registry import OpsRegistry, RegisteredOp
+from mirage.runtime import assert_mount_allowed
 from mirage.types import FileStat, MountMode, PathSpec
 
 
@@ -132,9 +133,10 @@ class Ops:
                     **kwargs):
         start = int(time.monotonic() * 1000)
         resource_type, rel_path, accessor, index, mode = self._resolve(path)
+        mount_prefix = self._mount_prefix(path)
+        assert_mount_allowed(mount_prefix)
         if write and mode == MountMode.READ:
             raise PermissionError(f"mount at {path!r} is read-only")
-        mount_prefix = self._mount_prefix(path)
         set_virtual_prefix(mount_prefix)
         filetype = self._get_filetype(rel_path)
         scope = PathSpec(
@@ -161,11 +163,6 @@ class Ops:
         self._record(op, path, resource_type, nbytes, start)
         if write:
             await self._invalidate(path)
-            # Invalidate the parent directory listing in the index cache
-            # so the next readdir/stat sees the mutation.
-            if index is not None:
-                parent = scope.original.rsplit("/", 1)[0] or "/"
-                await index.invalidate_dir(parent)
         return result
 
     async def read(self,

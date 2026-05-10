@@ -31,6 +31,15 @@ interface WsSessionParams {
 
 interface CreateSessionBody {
   sessionId?: string
+  /**
+   * Optional list of mount prefixes this session is permitted to access.
+   * When omitted (or null), the session can reach every mount on the
+   * workspace. When provided, dispatch / commands / WorkspaceFS reject
+   * paths that resolve to mounts outside this set with a capability
+   * error. Infrastructure mounts (cache root, observer, /dev) are always
+   * implicitly allowed.
+   */
+  allowedMounts?: string[] | null
 }
 
 export function registerSessionsRoutes(app: FastifyInstance, deps: SessionsRoutesDeps): void {
@@ -46,7 +55,11 @@ export function registerSessionsRoutes(app: FastifyInstance, deps: SessionsRoute
       if (ws.listSessions().some((s) => s.sessionId === sid)) {
         return reply.status(409).send({ detail: `session id already exists: ${sid}` })
       }
-      const sess = ws.createSession(sid)
+      const allowed =
+        Array.isArray(req.body.allowedMounts) && req.body.allowedMounts.length > 0
+          ? new Set(req.body.allowedMounts)
+          : null
+      const sess = ws.createSession(sid, allowed !== null ? { allowedMounts: allowed } : {})
       return reply.status(201).send({ sessionId: sess.sessionId, cwd: sess.cwd })
     },
   )

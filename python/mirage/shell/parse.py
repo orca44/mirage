@@ -26,3 +26,74 @@ def parse(command: str) -> tree_sitter.Node:
     """
     tree = TS_PARSER.parse(command.encode())
     return tree.root_node
+
+
+_BASH_KEYWORDS = frozenset({
+    "if",
+    "then",
+    "else",
+    "elif",
+    "fi",
+    "for",
+    "while",
+    "until",
+    "do",
+    "done",
+    "case",
+    "esac",
+    "in",
+    "function",
+    "select",
+})
+
+_STRUCTURAL_TOKENS = frozenset({
+    "(",
+    ")",
+    "{",
+    "}",
+    "[",
+    "]",
+    '"',
+    "'",
+    "`",
+})
+
+
+def _is_structural_error(node: tree_sitter.Node) -> bool:
+    """True if an ERROR node represents a real syntactic problem.
+
+    Tree-sitter occasionally emits ERROR nodes for stray statement
+    separators that bash itself accepts (notably ``& ;``). A real
+    syntax error contains a bash keyword, a bracket / quote token,
+    or a named subtree the parser tried to recover; stand-alone
+    statement separators (``;``, ``&``, ``|``) are not enough.
+    """
+    for child in node.children:
+        if child.is_named:
+            return True
+        if child.type in _BASH_KEYWORDS:
+            return True
+        if child.type in _STRUCTURAL_TOKENS:
+            return True
+    return False
+
+
+def find_syntax_error(node: tree_sitter.Node) -> str | None:
+    """Locate a top-level structural syntax error in a parsed AST.
+
+    Args:
+        node (tree_sitter.Node): root node from parse().
+
+    Returns:
+        str | None: text of the offending region, or None if the AST is clean.
+    """
+    if not node.has_error:
+        return None
+    for child in node.children:
+        if child.is_missing:
+            text = child.text
+            return text.decode(errors="replace") if text else ""
+        if child.type == "ERROR" and _is_structural_error(child):
+            text = child.text
+            return text.decode(errors="replace") if text else ""
+    return None

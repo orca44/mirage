@@ -12,10 +12,17 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from enum import StrEnum
+
 import tree_sitter
 
 from mirage.shell.types import NodeType as NT
 from mirage.shell.types import Redirect, RedirectKind
+
+
+class ProcessSubDirection(StrEnum):
+    INPUT = "input"
+    OUTPUT = "output"
 
 
 def get_text(node: tree_sitter.Node) -> str:
@@ -411,6 +418,23 @@ def get_herestring_content(node: tree_sitter.Node) -> str:
 def get_process_sub_command(node: tree_sitter.Node) -> tree_sitter.Node:
     """Get inner command from process_substitution."""
     return node.named_children[0]
+
+
+def get_process_sub_direction(
+        node: tree_sitter.Node) -> ProcessSubDirection | None:
+    """Return the direction marker on a process_substitution node.
+
+    `<(cmd)` is INPUT (inner stdout feeds our stdin), `>(cmd)` is OUTPUT
+    (our stdout feeds inner stdin). Returns None if the open token is missing.
+    """
+    if not node.children:
+        return None
+    open_token = node.children[0].type
+    if open_token == "<(":
+        return ProcessSubDirection.INPUT
+    if open_token == ">(":
+        return ProcessSubDirection.OUTPUT
+    return None
 
 
 def get_function_name(node: tree_sitter.Node) -> str:

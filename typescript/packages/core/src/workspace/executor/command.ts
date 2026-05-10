@@ -18,6 +18,7 @@ import { OperandKind } from '../../commands/spec/types.ts'
 import type { ByteSource } from '../../io/types.ts'
 import { IOResult, materialize } from '../../io/types.ts'
 import type { Resource } from '../../resource/base.ts'
+import { assertMountAllowed, MountNotAllowedError } from '../../runtime/session_context.ts'
 import { CallStack } from '../../shell/call_stack.ts'
 import type { JobTable } from '../../shell/job_table.ts'
 import { ERREXIT_EXEMPT_TYPES } from '../../shell/types.ts'
@@ -149,6 +150,19 @@ export async function handleCommand(
       new IOResult({ exitCode: 127, stderr: err }),
       new ExecutionNode({ command: cmdStr, exitCode: 127 }),
     ]
+  }
+  try {
+    assertMountAllowed(mount.prefix)
+  } catch (err) {
+    if (err instanceof MountNotAllowedError) {
+      const errBytes = new TextEncoder().encode(`${cmdName}: ${err.message}\n`)
+      return [
+        null,
+        new IOResult({ exitCode: 1, stderr: errBytes }),
+        new ExecutionNode({ command: cmdStr, stderr: errBytes, exitCode: 1 }),
+      ]
+    }
+    throw err
   }
 
   const [paths, texts, flagKwargs] = parseFlags(parts.slice(1), mount, cmdName, session.cwd)

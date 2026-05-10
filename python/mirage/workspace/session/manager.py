@@ -47,10 +47,12 @@ class SessionManager:
     def env(self, value: dict[str, str]) -> None:
         self._sessions[self._default_id].env = value
 
-    def create(self, session_id: str) -> Session:
+    def create(self,
+               session_id: str,
+               allowed_mounts: frozenset[str] | None = None) -> Session:
         if session_id in self._sessions:
             raise ValueError(f"Session {session_id!r} already exists")
-        session = Session(session_id=session_id)
+        session = Session(session_id=session_id, allowed_mounts=allowed_mounts)
         self._sessions[session_id] = session
         self._locks[session_id] = asyncio.Lock()
         return session

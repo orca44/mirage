@@ -47,17 +47,26 @@ from mirage.workspace.session import Session
 from mirage.workspace.types import ExecutionNode
 
 from mirage.shell.helpers import (  # isort: skip
-    get_case_items, get_case_word, get_command_name, get_declaration_keyword,
-    get_for_parts, get_function_body, get_function_name, get_if_branches,
-    get_list_parts, get_negated_command, get_parts, get_pipeline_commands,
-    get_redirects, get_subshell_body, get_text, get_unset_names,
-    get_while_parts)
+    ProcessSubDirection, get_case_items, get_case_word, get_command_name,
+    get_declaration_keyword, get_for_parts, get_function_body,
+    get_function_name, get_if_branches, get_list_parts, get_negated_command,
+    get_parts, get_pipeline_commands, get_process_sub_direction, get_redirects,
+    get_subshell_body, get_text, get_unset_names, get_while_parts)
 from mirage.workspace.executor.builtins import (  # isort: skip
     handle_bash, handle_cd, handle_echo, handle_eval, handle_export,
     handle_local, handle_man, handle_printenv, handle_printf, handle_python,
     handle_read, handle_readonly, handle_return, handle_set, handle_shift,
     handle_sleep, handle_source, handle_test, handle_trap, handle_unset,
     handle_whoami)
+
+_UNSUPPORTED_BUILTINS = frozenset({
+    "bg",
+    "disown",
+    "exec",
+    "complete",
+    "compgen",
+    "ulimit",
+})
 
 
 async def execute_node(
@@ -642,11 +651,17 @@ async def _dispatch_command_body(
                 stdin = content.encode() + b"\n"
                 break
 
-    # Process substitution: <(cmd) → execute inner cmd, use output as stdin
+    # Process substitution: <(cmd) feeds inner stdout as stdin.
+    # Output direction >(cmd) is unsupported; reject early so the
+    # caller sees a capability gap rather than a silent no-op.
     proc_sub_parts = []
     clean_parts = []
     for p in parts:
         if hasattr(p, "type") and p.type == NT.PROCESS_SUBSTITUTION:
+            if get_process_sub_direction(p) == ProcessSubDirection.OUTPUT:
+                err = b"mirage: unsupported: process substitution >(...)\n"
+                return None, IOResult(exit_code=2, stderr=err), ExecutionNode(
+                    command=name or "process_sub", exit_code=2, stderr=err)
             inner_cmds = [c for c in p.named_children if c.type == NT.COMMAND]
             if inner_cmds:
                 io_ps = await execute_fn(get_text(inner_cmds[0]),
@@ -685,6 +700,17 @@ async def _dispatch_command_body(
     # each resource can handle pattern pushdown.
     resolved = await resolve_globs(classified, registry, text_args=text_args)
     expanded = [p.original if isinstance(p, PathSpec) else p for p in resolved]
+
+    # ── unsupported bash builtins ──────────────
+    # Constructs the parser accepts but the executor cannot honor.
+    # Returning a clear error lets LLMs detect a capability gap instead
+    # of treating it as a missing binary or a silent no-op.
+    if name in _UNSUPPORTED_BUILTINS:
+        err = f"mirage: unsupported builtin: {name}\n".encode()
+        return None, IOResult(exit_code=2,
+                              stderr=err), ExecutionNode(command=name,
+                                                         exit_code=2,
+                                                         stderr=err)
 
     # ── shell builtins ──────────────────────────
     if name == SB.PWD:

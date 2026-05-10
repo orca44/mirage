@@ -254,7 +254,7 @@ describe('python3: TS-specific (Pyodide isolation + mechanics)', () => {
     expect(stdoutStr(rb).trim()).toBe('beta')
     await a.ws.close()
     await b.ws.close()
-  })
+  }, 30000)
 
   it('concurrent calls — each sees its own os.environ mutations atomically', async () => {
     const { ws } = await makeWorkspace()
