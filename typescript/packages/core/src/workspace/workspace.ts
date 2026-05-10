@@ -60,7 +60,7 @@ import { makeAbortError } from './abort.ts'
 import { executeNode } from './node/execute_node.ts'
 import { provisionNode } from './node/provision_node.ts'
 import { SessionManager } from './session/manager.ts'
-import { Session } from './session/session.ts'
+import type { Session } from './session/session.ts'
 import { ExecutionHistory } from './history.ts'
 import { ExecutionNode, ExecutionRecord } from './types.ts'
 
@@ -698,9 +698,7 @@ export class Workspace {
     const effectiveSession = useOverride
       ? targetSession.fork({
           ...(options.cwd !== undefined ? { cwd: options.cwd } : {}),
-          ...(options.env !== undefined
-            ? { env: { ...targetSession.env, ...options.env } }
-            : {}),
+          ...(options.env !== undefined ? { env: { ...targetSession.env, ...options.env } } : {}),
         })
       : targetSession
     const [[stdout, io], opRecords] = await runWithRecording(() =>

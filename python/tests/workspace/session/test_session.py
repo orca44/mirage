@@ -147,8 +147,9 @@ def test_fork_overrides_apply_without_mutating_original():
 
 
 def test_fork_deep_copies_mutable_containers():
-    original = Session(
-        session_id="orig", env={"FOO": "bar"}, arrays={"A": ["1"]})
+    original = Session(session_id="orig",
+                       env={"FOO": "bar"},
+                       arrays={"A": ["1"]})
     forked = original.fork()
     forked.env["NEW"] = "leaked?"
     forked.arrays["A"].append("2")

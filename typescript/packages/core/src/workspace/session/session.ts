@@ -85,7 +85,8 @@ export class Session {
       shellOptions: overrides.shellOptions ?? { ...this.shellOptions },
       readonlyVars: overrides.readonlyVars ?? new Set(this.readonlyVars),
       arrays:
-        overrides.arrays ?? Object.fromEntries(Object.entries(this.arrays).map(([k, v]) => [k, [...v]])),
+        overrides.arrays ??
+        Object.fromEntries(Object.entries(this.arrays).map(([k, v]) => [k, [...v]])),
       allowedMounts: overrides.allowedMounts ?? this.allowedMounts,
     })
   }

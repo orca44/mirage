@@ -65,7 +65,10 @@ class Session:
             "last_exit_code": self.last_exit_code,
             "shell_options": dict(self.shell_options),
             "readonly_vars": set(self.readonly_vars),
-            "arrays": {k: list(v) for k, v in self.arrays.items()},
+            "arrays": {
+                k: list(v)
+                for k, v in self.arrays.items()
+            },
             "allowed_mounts": self.allowed_mounts,
         }
         defaults.update(overrides)
