@@ -28,11 +28,20 @@ export function registerSessionCommands(program: Command): void {
     .command('create')
     .argument('<wsId>')
     .option('--id <sessionId>')
-    .action(async (wsId: string, opts: { id?: string }) => {
+    .option(
+      '-m, --mount <prefix>',
+      'restrict session to this mount prefix; repeatable',
+      (value: string, prev: string[]) => prev.concat([value]),
+      [] as string[],
+    )
+    .action(async (wsId: string, opts: { id?: string; mount?: string[] }) => {
       const c = buildClient()
       await c.ensureRunning({ allowSpawn: false })
       const body: Record<string, unknown> = {}
       if (opts.id !== undefined) body.sessionId = opts.id
+      if (opts.mount !== undefined && opts.mount.length > 0) {
+        body.allowedMounts = opts.mount
+      }
       emit(
         await handleResponse(
           await c.request('POST', `/v1/workspaces/${wsId}/sessions`, {

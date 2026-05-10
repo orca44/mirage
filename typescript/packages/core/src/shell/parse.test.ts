@@ -15,7 +15,7 @@
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { beforeAll, describe, expect, it } from 'vitest'
-import { createShellParser, type ShellParser } from './parse.ts'
+import { createShellParser, findSyntaxError, type ShellParser } from './parse.ts'
 
 const require = createRequire(import.meta.url)
 const engineWasm = readFileSync(require.resolve('web-tree-sitter/web-tree-sitter.wasm'))
@@ -128,5 +128,27 @@ describe('createShellParser — realistic multi-statement command', () => {
     const argTexts = args.map((n) => n.text)
     const pathArg = argTexts.find((t) => t === '/r2/Review')
     expect(pathArg).toBe('/r2/Review')
+  })
+})
+
+describe('findSyntaxError', () => {
+  it.each(['if then fi', 'echo (', 'for x do done', 'for', 'if', 'if; fi', 'echo "unterm'])(
+    'flags structural syntax error in %j',
+    (cmd) => {
+      const root = parser.parse(cmd)
+      expect(findSyntaxError(root)).not.toBeNull()
+    },
+  )
+
+  it.each([
+    'echo hi',
+    'for x in a b; do echo $x; done',
+    'if true; then echo y; fi',
+    'cat /tmp/x | sort',
+    'echo bg &; echo fg',
+    'for x in; do echo $x; done',
+  ])('returns null for valid / recoverable %j', (cmd) => {
+    const root = parser.parse(cmd)
+    expect(findSyntaxError(root)).toBeNull()
   })
 })

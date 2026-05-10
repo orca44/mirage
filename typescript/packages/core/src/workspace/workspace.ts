@@ -23,12 +23,13 @@ import { runWithRecording } from '../observe/context.ts'
 import { Observer } from '../observe/observer.ts'
 import type { OpRecord } from '../observe/record.ts'
 import { type OpKwargs, OpsRegistry } from '../ops/registry.ts'
+import { assertMountAllowed, runWithSession } from '../runtime/session_context.ts'
 import type { Resource } from '../resource/base.ts'
 import { RAMResource, type RAMResourceState } from '../resource/ram/ram.ts'
 import { GENERAL_COMMANDS, HISTORY_COMMANDS } from '../commands/builtin/general/index.ts'
 import { applyBarrier, BarrierPolicy } from '../shell/barrier.ts'
 import { JobTable } from '../shell/job_table.ts'
-import type { ShellParser } from '../shell/parse.ts'
+import { findSyntaxError, type ShellParser } from '../shell/parse.ts'
 import {
   decodeSnapshot,
   encodeSnapshot,
@@ -351,8 +352,34 @@ export class Workspace {
     this.sessionManager.env = value
   }
 
-  createSession(sessionId: string): Session {
-    return this.sessionManager.create(sessionId)
+  createSession(
+    sessionId: string,
+    options: { allowedMounts?: ReadonlySet<string> | null } = {},
+  ): Session {
+    let allowed = options.allowedMounts ?? null
+    if (allowed !== null) {
+      const normalized = new Set<string>()
+      for (const m of allowed) normalized.add('/' + m.replace(/^\/+|\/+$/g, ''))
+      for (const p of this.infrastructureMountPrefixes()) normalized.add(p)
+      allowed = normalized
+    }
+    return this.sessionManager.create(sessionId, { allowedMounts: allowed })
+  }
+
+  /**
+   * Mount prefixes a session is always allowed to touch.
+   *
+   * The cache mount (where text-processing commands like `wc` without a
+   * path argument resolve), the device mount, and the observer log are
+   * infrastructure: they hold no user credentials, and rejecting them
+   * would break common shell idioms or audit logging.
+   */
+  private infrastructureMountPrefixes(): Set<string> {
+    const prefixes = new Set<string>(['/dev'])
+    const def = this.registry.defaultMount
+    if (def !== null) prefixes.add('/' + def.prefix.replace(/^\/+|\/+$/g, ''))
+    prefixes.add('/' + this.observer.prefix.replace(/^\/+|\/+$/g, ''))
+    return prefixes
   }
 
   getSession(sessionId: string): Session {
@@ -515,12 +542,39 @@ export class Workspace {
     }
     const result = this.registry.resolve(path)
     const [resource] = result
+    const mount = this.registry.mountFor(path)
+    if (mount !== null) assertMountAllowed(mount.prefix)
     if (!this.opened.has(resource)) {
       await resource.open()
       this.opened.add(resource)
       this.openOrder.push(resource)
     }
     return result
+  }
+
+  /**
+   * Drop file-cache + stale parent index after a write to `path`.
+   *
+   * Single source of truth for post-write invalidation. Called from the
+   * dispatch closure so a write through any code path (including direct
+   * Ops) sees the same invalidation rules: file cache is dropped only
+   * for remote-backed mounts, and the parent directory index is dirtied
+   * for any mount that maintains an index. No-op for paths that resolve
+   * to no known mount.
+   */
+  async invalidateAfterWriteByPath(path: string): Promise<void> {
+    const mount = this.registry.mountFor(path)
+    if (mount === null) return
+    if (mount.resource.isRemote === true) {
+      await this.cache.remove(path)
+    }
+    const idx = mount.resource.index
+    if (idx !== undefined) {
+      const slash = path.lastIndexOf('/')
+      const parent = slash <= 0 ? '/' : path.slice(0, slash)
+      await idx.invalidateDir(parent)
+      await idx.invalidateDir(parent + '/')
+    }
   }
 
   async provision(command: string): Promise<ProvisionResult> {
@@ -560,6 +614,16 @@ export class Workspace {
     const parser = await this.getShellParser()
     const opsRegistry = this.opsRegistry
     const root = parser.parse(command)
+    const offending = findSyntaxError(root)
+    if (offending !== null) {
+      const snippet = offending.trim().slice(0, 40)
+      const errMsg =
+        snippet.length > 0
+          ? `mirage: syntax error near '${snippet}'\n`
+          : 'mirage: syntax error in command\n'
+      const err = new TextEncoder().encode(errMsg)
+      return new ExecuteResult(new Uint8Array(), err, 2)
+    }
     const rootNode = root as unknown as TSNodeLike
 
     const cache = this.cache
@@ -587,8 +651,8 @@ export class Workspace {
         args ?? [],
         fullKwargs,
       )
-      if (cacheable && DISPATCH_WRITE_OPS.has(opName)) {
-        await cache.remove(path.original)
+      if (DISPATCH_WRITE_OPS.has(opName)) {
+        await this.invalidateAfterWriteByPath(path.original)
       }
       return [result, new IOResult()]
     }
@@ -640,10 +704,13 @@ export class Workspace {
           functions: { ...targetSession.functions },
           lastExitCode: targetSession.lastExitCode,
           positionalArgs: [...targetSession.positionalArgs],
+          allowedMounts: targetSession.allowedMounts,
         })
       : targetSession
     const [[stdout, io], opRecords] = await runWithRecording(() =>
-      executeNode(deps, rootNode, effectiveSession, stdin, null),
+      runWithSession(effectiveSession, () =>
+        executeNode(deps, rootNode, effectiveSession, stdin, null),
+      ),
     )
     const materialized = await applyBarrier(stdout, io, BarrierPolicy.VALUE)
     io.syncExitCode()

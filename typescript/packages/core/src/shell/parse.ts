@@ -49,3 +49,63 @@ function toArrayBuffer(bytes: Uint8Array | ArrayBuffer): ArrayBuffer {
 function toUint8(bytes: Uint8Array | ArrayBuffer): Uint8Array {
   return bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)
 }
+
+const BASH_KEYWORDS: ReadonlySet<string> = new Set([
+  'if',
+  'then',
+  'else',
+  'elif',
+  'fi',
+  'for',
+  'while',
+  'until',
+  'do',
+  'done',
+  'case',
+  'esac',
+  'in',
+  'function',
+  'select',
+])
+
+const STRUCTURAL_TOKENS: ReadonlySet<string> = new Set([
+  '(',
+  ')',
+  '{',
+  '}',
+  '[',
+  ']',
+  '"',
+  "'",
+  '`',
+])
+
+function isStructuralError(node: Node): boolean {
+  for (const child of node.children) {
+    if (child.isNamed) return true
+    if (BASH_KEYWORDS.has(child.type)) return true
+    if (STRUCTURAL_TOKENS.has(child.type)) return true
+  }
+  return false
+}
+
+/**
+ * Locate a top-level structural syntax error in a parsed AST.
+ *
+ * Tree-sitter often recovers from minor anomalies (e.g. `for x in;`) by
+ * producing a valid statement with an internal ERROR token. Bash accepts
+ * those, so we only flag errors that surface as direct children of
+ * `program` AND contain a bash keyword, a bracket / quote, or a recovered
+ * named subtree. Stand-alone statement separators (`;`, `&`, `|`) inside an
+ * ERROR are deliberately not flagged because bash itself accepts e.g. `& ;`.
+ *
+ * Returns the offending region's text, or `null` if the AST is clean.
+ */
+export function findSyntaxError(node: Node): string | null {
+  if (!node.hasError) return null
+  for (const child of node.children) {
+    if (child.isMissing) return child.text
+    if (child.type === 'ERROR' && isStructuralError(child)) return child.text
+  }
+  return null
+}

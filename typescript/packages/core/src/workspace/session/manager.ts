@@ -39,11 +39,14 @@ export class SessionManager {
     this.defaultSession().env = value
   }
 
-  create(sessionId: string): Session {
+  create(sessionId: string, options: { allowedMounts?: ReadonlySet<string> | null } = {}): Session {
     if (this.sessions.has(sessionId)) {
       throw new Error(`Session ${sessionId} already exists`)
     }
-    const session = new Session({ sessionId })
+    const session = new Session({
+      sessionId,
+      allowedMounts: options.allowedMounts ?? null,
+    })
     this.sessions.set(sessionId, session)
     return session
   }

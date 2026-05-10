@@ -47,11 +47,11 @@ from mirage.workspace.session import Session
 from mirage.workspace.types import ExecutionNode
 
 from mirage.shell.helpers import (  # isort: skip
-    get_case_items, get_case_word, get_command_name, get_declaration_keyword,
-    get_for_parts, get_function_body, get_function_name, get_if_branches,
-    get_list_parts, get_negated_command, get_parts, get_pipeline_commands,
-    get_redirects, get_subshell_body, get_text, get_unset_names,
-    get_while_parts)
+    ProcessSubDirection, get_case_items, get_case_word, get_command_name,
+    get_declaration_keyword, get_for_parts, get_function_body,
+    get_function_name, get_if_branches, get_list_parts, get_negated_command,
+    get_parts, get_pipeline_commands, get_process_sub_direction, get_redirects,
+    get_subshell_body, get_text, get_unset_names, get_while_parts)
 from mirage.workspace.executor.builtins import (  # isort: skip
     handle_bash, handle_cd, handle_echo, handle_eval, handle_export,
     handle_local, handle_man, handle_printenv, handle_printf, handle_python,
@@ -658,8 +658,7 @@ async def _dispatch_command_body(
     clean_parts = []
     for p in parts:
         if hasattr(p, "type") and p.type == NT.PROCESS_SUBSTITUTION:
-            direction = p.children[0].type if p.children else ""
-            if direction == ">(":
+            if get_process_sub_direction(p) == ProcessSubDirection.OUTPUT:
                 err = b"mirage: unsupported: process substitution >(...)\n"
                 return None, IOResult(exit_code=2, stderr=err), ExecutionNode(
                     command=name or "process_sub", exit_code=2, stderr=err)

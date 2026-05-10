@@ -352,6 +352,19 @@ export function getProcessSubCommand(node: TSNodeLike): TSNodeLike {
   return first
 }
 
+export const ProcessSubDirection = {
+  INPUT: 'input',
+  OUTPUT: 'output',
+} as const
+export type ProcessSubDirection = (typeof ProcessSubDirection)[keyof typeof ProcessSubDirection]
+
+export function getProcessSubDirection(node: TSNodeLike): ProcessSubDirection | null {
+  const open = node.children[0]?.type ?? ''
+  if (open === '<(') return ProcessSubDirection.INPUT
+  if (open === '>(') return ProcessSubDirection.OUTPUT
+  return null
+}
+
 export function getFunctionName(node: TSNodeLike): string {
   const first = node.namedChildren[0]
   return first !== undefined ? getText(first) : ''

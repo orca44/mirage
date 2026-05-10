@@ -25,6 +25,15 @@ export interface SessionInit {
   shellOptions?: Record<string, boolean>
   readonlyVars?: Set<string>
   arrays?: Record<string, string[]>
+  /**
+   * Mount prefixes this session is allowed to touch. `null` (the default)
+   * means no restriction — every mount in the workspace is reachable.
+   * When provided, dispatch / handle_command / Ops all reject paths that
+   * resolve to mounts outside this set with a capability error. The
+   * workspace always implicitly grants access to its own infrastructure
+   * mounts (cache root, observer, /dev) regardless of this allowlist.
+   */
+  allowedMounts?: ReadonlySet<string> | null
 }
 
 export class Session {
@@ -40,6 +49,7 @@ export class Session {
   arrays: Record<string, string[]>
   stdinBuffer: AsyncLineIterator | null = null
   localVars: Map<string, string | null> | null = null
+  readonly allowedMounts: ReadonlySet<string> | null
 
   constructor(init: SessionInit) {
     this.sessionId = init.sessionId
@@ -52,6 +62,7 @@ export class Session {
     this.shellOptions = init.shellOptions ?? {}
     this.readonlyVars = init.readonlyVars ?? new Set()
     this.arrays = init.arrays ?? {}
+    this.allowedMounts = init.allowedMounts ?? null
   }
 
   toJSON(): Record<string, unknown> {

@@ -33,6 +33,8 @@ import {
   getNegatedCommand,
   getParts,
   getPipelineCommands,
+  getProcessSubDirection,
+  ProcessSubDirection,
   getRedirects,
   getSubshellBody,
   getText,
@@ -98,6 +100,15 @@ import { resolveGlobs } from './resolve_globs.ts'
 import { expandTestExpr } from './test_expr.ts'
 
 type Result = [ByteSource | null, IOResult, ExecutionNode]
+
+const UNSUPPORTED_BUILTINS: ReadonlySet<string> = new Set([
+  'bg',
+  'disown',
+  'exec',
+  'complete',
+  'compgen',
+  'ulimit',
+])
 
 export interface ExecuteNodeDeps {
   dispatch: DispatchFn
@@ -450,7 +461,15 @@ async function executeProgram(
       i += 1
       continue
     }
-    if (child.isNamed !== true || child.type === NT.ERROR || child.type === NT.COMMENT) {
+    if (child.isNamed !== true || child.type === NT.COMMENT) {
+      i += 1
+      continue
+    }
+    if (child.type === NT.ERROR) {
+      // ERROR nodes that contain only stray statement separators (`& ;`)
+      // are filtered out at parse-time by findSyntaxError, so anything
+      // reaching here is a recovered fragment we deliberately skip;
+      // structural errors would have raised before executeNode ran.
       i += 1
       continue
     }
@@ -648,6 +667,18 @@ async function runCommandBody(
   const cleanParts: TSNodeLike[] = []
   for (const p of parts) {
     if (p.type === NT.PROCESS_SUBSTITUTION) {
+      if (getProcessSubDirection(p) === ProcessSubDirection.OUTPUT) {
+        const err = new TextEncoder().encode('mirage: unsupported: process substitution >(...)\n')
+        return [
+          null,
+          new IOResult({ exitCode: 2, stderr: err }),
+          new ExecutionNode({
+            command: name === '' ? 'process_sub' : name,
+            exitCode: 2,
+            stderr: err,
+          }),
+        ]
+      }
       const innerCmds = p.namedChildren.filter((c) => c.type === NT.COMMAND)
       const innerFirst = innerCmds[0]
       if (innerFirst !== undefined) {
@@ -685,6 +716,18 @@ async function runCommandBody(
   const classified = classifyParts(expanded, registry, session.cwd, textArgs, pathArgs)
   const resolved = await resolveGlobs(classified, registry, textArgs)
   const finalExpanded = resolved.map((p) => (p instanceof PathSpec ? p.original : p))
+
+  // Unsupported bash builtins. Constructs the parser accepts but the
+  // executor cannot honor. Returning a clear error lets LLMs detect a
+  // capability gap instead of treating it as a missing binary.
+  if (UNSUPPORTED_BUILTINS.has(name)) {
+    const err = new TextEncoder().encode(`mirage: unsupported builtin: ${name}\n`)
+    return [
+      null,
+      new IOResult({ exitCode: 2, stderr: err }),
+      new ExecutionNode({ command: name, exitCode: 2, stderr: err }),
+    ]
+  }
 
   // Shell builtins
   if (name === SB.PWD) {

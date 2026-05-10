@@ -241,24 +241,20 @@ describe('python3: TS-specific (Pyodide isolation + mechanics)', () => {
     await ws.close()
   })
 
-  it(
-    'cross-workspace isolation: different workspaces have different envs',
-    async () => {
-      const a = await makeWorkspace()
-      const b = await makeWorkspace()
-      await a.ws.execute('export NAME=alpha')
-      await b.ws.execute('export NAME=beta')
-      const [ra, rb] = await Promise.all([
-        a.ws.execute('python3 -c "import os; print(os.environ[\'NAME\'])"'),
-        b.ws.execute('python3 -c "import os; print(os.environ[\'NAME\'])"'),
-      ])
-      expect(stdoutStr(ra).trim()).toBe('alpha')
-      expect(stdoutStr(rb).trim()).toBe('beta')
-      await a.ws.close()
-      await b.ws.close()
-    },
-    30000,
-  )
+  it('cross-workspace isolation: different workspaces have different envs', async () => {
+    const a = await makeWorkspace()
+    const b = await makeWorkspace()
+    await a.ws.execute('export NAME=alpha')
+    await b.ws.execute('export NAME=beta')
+    const [ra, rb] = await Promise.all([
+      a.ws.execute('python3 -c "import os; print(os.environ[\'NAME\'])"'),
+      b.ws.execute('python3 -c "import os; print(os.environ[\'NAME\'])"'),
+    ])
+    expect(stdoutStr(ra).trim()).toBe('alpha')
+    expect(stdoutStr(rb).trim()).toBe('beta')
+    await a.ws.close()
+    await b.ws.close()
+  }, 30000)
 
   it('concurrent calls — each sees its own os.environ mutations atomically', async () => {
     const { ws } = await makeWorkspace()
