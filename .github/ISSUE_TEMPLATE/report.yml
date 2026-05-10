@@ -1,0 +1,104 @@
+name: Report an issue
+description: Report a bug, docs problem, feature request, question, or other issue.
+title: "[Issue]: "
+labels: ["triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. Clear details help us reproduce, prioritize, and fix issues faster.
+
+  - type: dropdown
+    id: report_type
+    attributes:
+      label: What type of report is this?
+      options:
+        - Bug
+        - Feature request
+        - Documentation
+        - Example
+        - Question
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Python package
+        - TypeScript packages
+        - CLI
+        - Docs
+        - Examples
+        - GitHub workflows
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: Tell us what happened, what you expected, or what you want to improve.
+      placeholder: Describe the issue or request in a few sentences.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: For bugs, include the smallest command, code snippet, or example that reproduces the issue.
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened instead?
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What happened? Include errors, stack traces, logs, or screenshots when useful.
+      render: shell
+
+  - type: input
+    id: version
+    attributes:
+      label: Mirage version or commit
+      placeholder: "0.0.2a0, npm package version, or git SHA"
+
+  - type: input
+    id: python_version
+    attributes:
+      label: Python version
+      placeholder: "3.12.0"
+
+  - type: input
+    id: node_version
+    attributes:
+      label: Node.js version
+      placeholder: "22.0.0"
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS
+        - Linux
+        - Windows
+        - Other
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add anything else that may help, including links to related issues, PRs, docs, or examples.
