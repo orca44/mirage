@@ -696,15 +696,11 @@ export class Workspace {
     const targetSession = this.sessionManager.get(targetSessionId)
     const useOverride = options.cwd !== undefined || options.env !== undefined
     const effectiveSession = useOverride
-      ? new Session({
-          sessionId: targetSession.sessionId,
-          cwd: options.cwd ?? targetSession.cwd,
-          env: { ...targetSession.env, ...(options.env ?? {}) },
-          createdAt: targetSession.createdAt,
-          functions: { ...targetSession.functions },
-          lastExitCode: targetSession.lastExitCode,
-          positionalArgs: [...targetSession.positionalArgs],
-          allowedMounts: targetSession.allowedMounts,
+      ? targetSession.fork({
+          ...(options.cwd !== undefined ? { cwd: options.cwd } : {}),
+          ...(options.env !== undefined
+            ? { env: { ...targetSession.env, ...options.env } }
+            : {}),
         })
       : targetSession
     const [[stdout, io], opRecords] = await runWithRecording(() =>
