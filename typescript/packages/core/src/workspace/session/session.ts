@@ -65,6 +65,31 @@ export class Session {
     this.allowedMounts = init.allowedMounts ?? null
   }
 
+  /**
+   * Return a copy of this session with `overrides` applied. Mutable
+   * containers (env, functions, readonlyVars, arrays, positionalArgs)
+   * are shallow-copied so mutations on the fork do not leak back into
+   * the source. Every field — including capability fields like
+   * `allowedMounts` — is propagated, so callers cannot accidentally
+   * forget one when adding new fields.
+   */
+  fork(overrides: Partial<SessionInit> = {}): Session {
+    return new Session({
+      sessionId: overrides.sessionId ?? this.sessionId,
+      cwd: overrides.cwd ?? this.cwd,
+      env: overrides.env ?? { ...this.env },
+      createdAt: overrides.createdAt ?? this.createdAt,
+      functions: overrides.functions ?? { ...this.functions },
+      lastExitCode: overrides.lastExitCode ?? this.lastExitCode,
+      positionalArgs: overrides.positionalArgs ?? [...this.positionalArgs],
+      shellOptions: overrides.shellOptions ?? { ...this.shellOptions },
+      readonlyVars: overrides.readonlyVars ?? new Set(this.readonlyVars),
+      arrays:
+        overrides.arrays ?? Object.fromEntries(Object.entries(this.arrays).map(([k, v]) => [k, [...v]])),
+      allowedMounts: overrides.allowedMounts ?? this.allowedMounts,
+    })
+  }
+
   toJSON(): Record<string, unknown> {
     return {
       sessionId: this.sessionId,

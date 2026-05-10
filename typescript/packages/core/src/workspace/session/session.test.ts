@@ -60,3 +60,55 @@ describe('Session', () => {
     expect(restored.env).toEqual({ K: 'V' })
   })
 })
+
+describe('Session.fork', () => {
+  it('copies every field, including allowedMounts and shellOptions', () => {
+    const original = new Session({
+      sessionId: 'orig',
+      cwd: '/disk',
+      env: { FOO: 'bar' },
+      allowedMounts: new Set(['/s3', '/dev', '/_default']),
+      shellOptions: { errexit: true },
+      readonlyVars: new Set(['HOME']),
+      arrays: { ARGV: ['a', 'b'] },
+      positionalArgs: ['x'],
+      lastExitCode: 7,
+    })
+    const forked = original.fork({})
+    expect(forked.sessionId).toBe('orig')
+    expect(forked.cwd).toBe('/disk')
+    expect(forked.env).toEqual({ FOO: 'bar' })
+    expect(forked.allowedMounts).toBe(original.allowedMounts)
+    expect(forked.shellOptions).toEqual({ errexit: true })
+    expect(forked.readonlyVars.has('HOME')).toBe(true)
+    expect(forked.arrays).toEqual({ ARGV: ['a', 'b'] })
+    expect(forked.positionalArgs).toEqual(['x'])
+    expect(forked.lastExitCode).toBe(7)
+  })
+
+  it('applies overrides without mutating the original', () => {
+    const original = new Session({
+      sessionId: 'orig',
+      cwd: '/disk',
+      env: { FOO: 'bar' },
+    })
+    const forked = original.fork({ cwd: '/ram', env: { BAZ: 'qux' } })
+    expect(forked.cwd).toBe('/ram')
+    expect(forked.env).toEqual({ BAZ: 'qux' })
+    expect(original.cwd).toBe('/disk')
+    expect(original.env).toEqual({ FOO: 'bar' })
+  })
+
+  it('deep-copies mutable containers so mutations on the fork do not leak', () => {
+    const original = new Session({
+      sessionId: 'orig',
+      env: { FOO: 'bar' },
+      arrays: { A: ['1'] },
+    })
+    const forked = original.fork({})
+    forked.env.NEW = 'leaked?'
+    forked.arrays.A?.push('2')
+    expect('NEW' in original.env).toBe(false)
+    expect(original.arrays.A).toEqual(['1'])
+  })
+})
