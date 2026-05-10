@@ -58,7 +58,14 @@ def assert_mount_allowed(mount_prefix: str) -> None:
     if sess is None or sess.allowed_mounts is None:
         return
     norm = "/" + mount_prefix.strip("/") if mount_prefix.strip("/") else "/"
-    if norm == "/" or norm in sess.allowed_mounts:
+    # A user-defined root mount ({"/": resource}) currently bypasses
+    # the allowlist entirely. This is an undocumented escape hatch: a
+    # session restricted to /s3 but with a workspace mounted at root
+    # would still expose every path under /. Behaviour-changing fix is
+    # out of scope for this refactor, flagged for separate discussion.
+    if norm == "/":
         return
-    raise PermissionError(f"session {sess.session_id!r} not allowed to access "
-                          f"mount {norm!r}")
+    if norm in sess.allowed_mounts:
+        return
+    raise PermissionError(
+        f"session {sess.session_id!r} not allowed to access mount {norm!r}")

@@ -60,7 +60,7 @@ import { makeAbortError } from './abort.ts'
 import { executeNode } from './node/execute_node.ts'
 import { provisionNode } from './node/provision_node.ts'
 import { SessionManager } from './session/manager.ts'
-import { Session } from './session/session.ts'
+import type { Session } from './session/session.ts'
 import { ExecutionHistory } from './history.ts'
 import { ExecutionNode, ExecutionRecord } from './types.ts'
 
@@ -696,22 +696,14 @@ export class Workspace {
     const targetSession = this.sessionManager.get(targetSessionId)
     const useOverride = options.cwd !== undefined || options.env !== undefined
     const effectiveSession = useOverride
-      ? new Session({
-          sessionId: targetSession.sessionId,
-          cwd: options.cwd ?? targetSession.cwd,
-          env: { ...targetSession.env, ...(options.env ?? {}) },
-          createdAt: targetSession.createdAt,
-          functions: { ...targetSession.functions },
-          lastExitCode: targetSession.lastExitCode,
-          positionalArgs: [...targetSession.positionalArgs],
-          allowedMounts: targetSession.allowedMounts,
+      ? targetSession.fork({
+          ...(options.cwd !== undefined ? { cwd: options.cwd } : {}),
+          ...(options.env !== undefined ? { env: { ...targetSession.env, ...options.env } } : {}),
         })
       : targetSession
     const [[stdout, io], opRecords] = await runWithRecording(() =>
-      Promise.resolve(
-        runWithSession(effectiveSession, () =>
-          executeNode(deps, rootNode, effectiveSession, stdin, null),
-        ),
+      runWithSession(effectiveSession, () =>
+        executeNode(deps, rootNode, effectiveSession, stdin, null),
       ),
     )
     const materialized = await applyBarrier(stdout, io, BarrierPolicy.VALUE)

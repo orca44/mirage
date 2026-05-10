@@ -112,3 +112,46 @@ def test_session_allowed_mounts_default_none():
 def test_session_allowed_mounts_set():
     s = Session(session_id="s", allowed_mounts=frozenset({"/s3", "/slack"}))
     assert s.allowed_mounts == frozenset({"/s3", "/slack"})
+
+
+def test_fork_copies_every_field_including_allowed_mounts():
+    original = Session(
+        session_id="orig",
+        cwd="/disk",
+        env={"FOO": "bar"},
+        functions={"f": object()},
+        last_exit_code=7,
+        shell_options={"errexit": True},
+        readonly_vars={"HOME"},
+        arrays={"ARGV": ["a", "b"]},
+        allowed_mounts=frozenset({"/s3", "/dev", "/_default"}),
+    )
+    forked = original.fork()
+    assert forked.session_id == "orig"
+    assert forked.cwd == "/disk"
+    assert forked.env == {"FOO": "bar"}
+    assert forked.allowed_mounts == frozenset({"/s3", "/dev", "/_default"})
+    assert forked.shell_options == {"errexit": True}
+    assert "HOME" in forked.readonly_vars
+    assert forked.arrays == {"ARGV": ["a", "b"]}
+    assert forked.last_exit_code == 7
+
+
+def test_fork_overrides_apply_without_mutating_original():
+    original = Session(session_id="orig", cwd="/disk", env={"FOO": "bar"})
+    forked = original.fork(cwd="/ram", env={"BAZ": "qux"})
+    assert forked.cwd == "/ram"
+    assert forked.env == {"BAZ": "qux"}
+    assert original.cwd == "/disk"
+    assert original.env == {"FOO": "bar"}
+
+
+def test_fork_deep_copies_mutable_containers():
+    original = Session(session_id="orig",
+                       env={"FOO": "bar"},
+                       arrays={"A": ["1"]})
+    forked = original.fork()
+    forked.env["NEW"] = "leaked?"
+    forked.arrays["A"].append("2")
+    assert "NEW" not in original.env
+    assert original.arrays["A"] == ["1"]

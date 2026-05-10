@@ -18,7 +18,6 @@ import logging
 import sys
 import time
 from collections.abc import AsyncIterator
-from dataclasses import replace
 from typing import Any
 
 from mirage.cache.file import io as cache_io
@@ -579,15 +578,15 @@ class Workspace:
 
         session = self._session_mgr.get(session_id)
         use_override = cwd is not None or env is not None
-        effective_session = (replace(
-            session,
-            cwd=cwd if cwd is not None else session.cwd,
-            env={
-                **session.env,
-                **(env or {})
-            },
-            functions=dict(session.functions),
-        ) if use_override else session)
+        if use_override:
+            overrides: dict[str, Any] = {}
+            if cwd is not None:
+                overrides["cwd"] = cwd
+            if env is not None:
+                overrides["env"] = {**session.env, **env}
+            effective_session = session.fork(**overrides)
+        else:
+            effective_session = session
         self._current_agent_id = agent_id
         io = IOResult()
         exec_node = ExecutionNode(command=command, exit_code=0)

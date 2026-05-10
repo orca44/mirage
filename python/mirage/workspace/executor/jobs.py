@@ -35,11 +35,7 @@ async def handle_background(
     call_stack=None,
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     """Run left side in background."""
-    bg_session = Session(
-        session_id=session.session_id,
-        cwd=session.cwd,
-        env=dict(session.env),
-    )
+    bg_session = session.fork()
 
     async def _run_bg():
         # Background jobs don't receive stdin, matching real shell
