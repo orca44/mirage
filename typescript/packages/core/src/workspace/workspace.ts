@@ -708,8 +708,10 @@ export class Workspace {
         })
       : targetSession
     const [[stdout, io], opRecords] = await runWithRecording(() =>
-      runWithSession(effectiveSession, () =>
-        executeNode(deps, rootNode, effectiveSession, stdin, null),
+      Promise.resolve(
+        runWithSession(effectiveSession, () =>
+          executeNode(deps, rootNode, effectiveSession, stdin, null),
+        ),
       ),
     )
     const materialized = await applyBarrier(stdout, io, BarrierPolicy.VALUE)

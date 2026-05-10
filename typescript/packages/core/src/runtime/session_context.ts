@@ -12,13 +12,12 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { AsyncLocalStorage } from 'node:async_hooks'
-
+import { createAsyncContext } from '../utils/async_context.ts'
 import type { Session } from '../workspace/session/session.ts'
 
-const sessionStorage = new AsyncLocalStorage<Session>()
+const sessionStorage = createAsyncContext<Session>()
 
-export function runWithSession<T>(session: Session, fn: () => T): T {
+export function runWithSession<T>(session: Session, fn: () => T | Promise<T>): T | Promise<T> {
   return sessionStorage.run(session, fn)
 }
 
