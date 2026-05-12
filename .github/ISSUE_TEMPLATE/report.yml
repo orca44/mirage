@@ -97,6 +97,12 @@ body:
         - Windows
         - Other
 
+  - type: input
+    id: browser
+    attributes:
+      label: Browser
+      placeholder: "Chrome 126, Safari 17, Firefox 127, or N/A"
+
   - type: textarea
     id: context
     attributes:
