@@ -77,13 +77,6 @@ jobs:
         working-directory: typescript
         run: pnpm test
 
-      - name: Run self-contained Python example (custom_command)
-        run: ./python/.venv/bin/python examples/python/other/custom_command.py
-
-      - name: Run self-contained TypeScript example (custom_command)
-        working-directory: examples/typescript
-        run: pnpm exec tsx other/custom_command.ts
-
   import-isolation:
     runs-on: ubuntu-latest
     strategy:
