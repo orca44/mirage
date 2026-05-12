@@ -100,6 +100,7 @@ async def ls(
     *texts: str,
     stdin: bytes | None = None,
     args_l: bool = False,
+    args_1: bool = False,
     a: bool = False,
     A: bool = False,
     h: bool = False,
@@ -142,7 +143,7 @@ async def ls(
         except (FileNotFoundError, ValueError) as exc:
             warnings.append(f"ls: cannot access '{p.original}': {exc}")
             continue
-        if args_l:
+        if args_l and not args_1:
             standard_stats: list = []
             for e in entries:
                 ext = _get_extension(e.name)
@@ -173,7 +174,7 @@ async def ls(
                 is_dir = F and e.type == FileType.DIRECTORY
                 name = e.name + "/" if is_dir else e.name
                 results.append(name)
-    output = "\n".join(results).encode()
+    output = ("\n".join(results) + "\n").encode() if results else b""
     stderr = "\n".join(warnings).encode() if warnings else None
     exit_code = 1 if warnings and not results else 0
     return output, IOResult(stderr=stderr, exit_code=exit_code)
