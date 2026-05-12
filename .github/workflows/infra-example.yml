@@ -240,3 +240,54 @@ jobs:
           echo "$output" | grep -q "listdir: \['note.md'\]" || (echo "FAIL: lazy-on-miss listdir failed" && exit 1)
           echo "$output" | grep -q "read: lazy demo" || (echo "FAIL: lazy-on-miss read failed" && exit 1)
           echo "$output" | grep -q "PNG magic: 89 50 4e 47" || (echo "FAIL: PIL save did not produce a PNG" && exit 1)
+
+  examples-custom-command:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: typescript/pnpm-lock.yaml
+
+      - name: Install Python dependencies
+        working-directory: python
+        run: uv sync --all-extras --no-extra camel
+
+      - name: Install TypeScript dependencies
+        working-directory: typescript
+        run: pnpm install --frozen-lockfile
+
+      - name: Build TypeScript packages
+        working-directory: typescript
+        run: pnpm -r build
+
+      - name: Run custom_command example (Python)
+        run: |
+          output=$(./python/.venv/bin/python examples/python/other/custom_command.py 2>&1)
+          echo "$output"
+          echo "$output" | grep -q "hello from RAMAccessor: /ram/note.txt" || (echo "FAIL: missing RAM greet output" && exit 1)
+          echo "$output" | grep -q "hello from DiskAccessor: /disk/note.txt" || (echo "FAIL: missing Disk greet output" && exit 1)
+
+      - name: Run custom_command example (TypeScript)
+        run: |
+          output=$(pnpm -C examples/typescript exec tsx other/custom_command.ts 2>&1)
+          echo "$output"
+          echo "$output" | grep -q "hello from RAMAccessor: /ram/note.txt" || (echo "FAIL: missing RAM greet output" && exit 1)
+          echo "$output" | grep -q "hello from DiskAccessor: /disk/note.txt" || (echo "FAIL: missing Disk greet output" && exit 1)

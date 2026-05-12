@@ -92,7 +92,57 @@ describe('Workspace.cacheMount.registerFns', () => {
     })
     expect(() => {
       ws.cacheMount.registerFns(diskOnly)
-    }).toThrow(/ram/)
+    }).toThrow(/'disk'/)
+  })
+
+  it('multi-resource command filters to matching resource', () => {
+    const ws = mkWs()
+    const multi = command({
+      name: 'multi',
+      resource: [ResourceName.RAM, ResourceName.S3],
+      spec: specOf('cat'),
+      fn: () => [null, new IOResult()],
+    })
+    ws.cacheMount.registerFns(multi)
+    const cmd = ws.cacheMount.resolveCommand('multi')
+    expect(cmd).not.toBeNull()
+    expect(cmd?.resource).toBe(ResourceName.RAM)
+  })
+
+  it('multi-resource command with no matching resource throws', () => {
+    const ws = mkWs()
+    const noneMatch = command({
+      name: 'noneMatch',
+      resource: [ResourceName.S3, ResourceName.DISK],
+      spec: specOf('cat'),
+      fn: () => [null, new IOResult()],
+    })
+    expect(() => {
+      ws.cacheMount.registerFns(noneMatch)
+    }).toThrow(/'disk'.*'s3'/)
+  })
+
+  it('multi-resource op filters to matching resource', () => {
+    const ws = mkWs()
+    const fn = (_acc: unknown, p: PathSpec): string => `multi:${p.original}`
+    const multiOps: RegisteredOp[] = [
+      { name: 'multi_op', resource: ResourceName.RAM, filetype: null, fn, write: false },
+      { name: 'multi_op', resource: ResourceName.S3, filetype: null, fn, write: false },
+    ]
+    ws.cacheMount.registerFns(multiOps)
+    expect(ws.cacheMount.registeredOps().multi_op).toBeDefined()
+  })
+
+  it('multi-resource op with no matching resource throws', () => {
+    const ws = mkWs()
+    const fn = (_acc: unknown, p: PathSpec): string => p.original
+    const noneMatchOps: RegisteredOp[] = [
+      { name: 'none_op', resource: ResourceName.S3, filetype: null, fn, write: false },
+      { name: 'none_op', resource: ResourceName.DISK, filetype: null, fn, write: false },
+    ]
+    expect(() => {
+      ws.cacheMount.registerFns(noneMatchOps)
+    }).toThrow(/'disk'.*'s3'/)
   })
 })
 
