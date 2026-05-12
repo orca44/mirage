@@ -38,6 +38,9 @@ jobs:
           cache: pnpm
           cache-dependency-path: typescript/pnpm-lock.yaml
 
+      - name: Install node-gyp
+        run: npm install -g node-gyp
+
       - name: Install Python dependencies
         working-directory: python
         run: uv sync --all-extras --no-extra camel
@@ -111,6 +114,9 @@ jobs:
           cache: pnpm
           cache-dependency-path: typescript/pnpm-lock.yaml
 
+      - name: Install node-gyp
+        run: npm install -g node-gyp
+
       - name: Install Python dependencies
         working-directory: python
         run: uv sync --all-extras --no-extra camel
@@ -179,6 +185,9 @@ jobs:
           node-version: "22"
           cache: pnpm
           cache-dependency-path: typescript/pnpm-lock.yaml
+
+      - name: Install node-gyp
+        run: npm install -g node-gyp
 
       - name: Install Python dependencies
         working-directory: python
