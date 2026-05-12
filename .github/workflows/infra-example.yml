@@ -277,7 +277,7 @@ jobs:
         uses: astral-sh/setup-uv@v7
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 10.32.1
 
@@ -287,6 +287,9 @@ jobs:
           node-version: "22"
           cache: pnpm
           cache-dependency-path: typescript/pnpm-lock.yaml
+
+      - name: Install node-gyp
+        run: npm install -g node-gyp
 
       - name: Install Python dependencies
         working-directory: python
