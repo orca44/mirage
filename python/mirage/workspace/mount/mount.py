@@ -171,17 +171,29 @@ class Mount:
         pname = self.resource.name
         for fn in fns:
             if hasattr(fn, "_registered_commands"):
-                for rc in fn._registered_commands:
-                    if rc.resource is not None and rc.resource != pname:
-                        raise ValueError(
-                            f"command {rc.name!r} is for resource "
-                            f"{rc.resource!r}, not {pname!r}")
+                rcs = fn._registered_commands
+                matching = [
+                    rc for rc in rcs
+                    if rc.resource is None or rc.resource == pname
+                ]
+                if rcs and not matching:
+                    resources = sorted({rc.resource for rc in rcs})
+                    raise ValueError(
+                        f"command {rcs[0].name!r} is for resource(s) "
+                        f"{resources!r}, not {pname!r}")
+                for rc in matching:
                     self.register(rc)
             if hasattr(fn, "_registered_ops"):
-                for ro in fn._registered_ops:
-                    if ro.resource is not None and ro.resource != pname:
-                        raise ValueError(f"op {ro.name!r} is for resource "
-                                         f"{ro.resource!r}, not {pname!r}")
+                ros = fn._registered_ops
+                matching_ops = [
+                    ro for ro in ros
+                    if ro.resource is None or ro.resource == pname
+                ]
+                if ros and not matching_ops:
+                    resources = sorted({ro.resource for ro in ros})
+                    raise ValueError(f"op {ros[0].name!r} is for resource(s) "
+                                     f"{resources!r}, not {pname!r}")
+                for ro in matching_ops:
                     self.register_op(ro)
 
     def unregister(self, names: list[str]) -> None:

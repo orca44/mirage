@@ -152,7 +152,7 @@ def test_register_fns_wrong_resource_raises(ws):
         return b"s3", IOResult()
 
     m = ws.mount("/data/")
-    with pytest.raises(ValueError, match="resource 's3'"):
+    with pytest.raises(ValueError, match=r"'s3'"):
         m.register_fns([s3_cmd])
 
 
@@ -163,5 +163,16 @@ def test_register_fns_wrong_resource_op_raises(ws):
         return b"s3"
 
     m = ws.mount("/data/")
-    with pytest.raises(ValueError, match="resource 's3'"):
+    with pytest.raises(ValueError, match=r"'s3'"):
         m.register_fns([s3_op])
+
+
+def test_register_fns_multi_resource_filters_to_matching(ws):
+
+    @command("multi", resource=["ram", "s3"], spec=SPECS["cat"])
+    async def multi(accessor, paths, *texts, **kw):
+        return b"multi", IOResult()
+
+    m = ws.mount("/data/")
+    m.register_fns([multi])
+    assert "multi" in m.commands()
