@@ -24,6 +24,7 @@ from dotenv import load_dotenv
 from mirage import MountMode, Workspace
 from mirage.resource.ram import RAMResource
 from mirage.resource.s3 import S3Config, S3Resource
+from mirage.workspace.snapshot import ContentDriftError
 
 load_dotenv(".env.development")
 
@@ -518,7 +519,7 @@ async def main():
     with tempfile.NamedTemporaryFile(suffix=".tar", delete=False) as f:
         snap = f.name
     try:
-        ws.snapshot(snap)
+        await ws.snapshot(snap)
         size = os.path.getsize(snap)
         print(f"  saved → {snap} ({size} bytes)")
 
@@ -545,20 +546,68 @@ async def main():
         print(f"  loaded ws ls /s3/: "
               f"{(await r.stdout_str()).strip()[:60]}…")
 
-        # copy(): in-process — reuses the same S3Resource; both copies
+        # copy(): in-process, reuses the same S3Resource; both copies
         # see the same bucket
-        cp = ws.copy()
+        cp = await ws.copy()
         print(f"  copy() mounts: {[m.prefix for m in cp.mounts()]}")
 
-        deep = _copy.deepcopy(ws)
-        print(f"  deepcopy() mounts: {[m.prefix for m in deep.mounts()]}")
-
-        try:
-            _copy.copy(ws)
-        except NotImplementedError as e:
-            print(f"  ✓ shallow copy raises: {str(e)[:60]}…")
+        for op_name, op in (("deepcopy", _copy.deepcopy), ("shallow copy",
+                                                           _copy.copy)):
+            try:
+                op(ws)
+                print(f"  ✗ {op_name} should have raised")
+            except NotImplementedError as e:
+                print(f"  ✓ {op_name} raises: {str(e)[:60]}…")
     finally:
         os.unlink(snap)
+
+    print("\n=== DRIFT + VERSION PIN ===\n")
+    print("  requires bucket versioning enabled:")
+    print("  aws s3api put-bucket-versioning --bucket <bucket> "
+          "--versioning-configuration Status=Enabled\n")
+    probe = f"/s3/drift-probe-{uuid.uuid4().hex[:8]}.txt"
+    drift_ws = Workspace({"/s3/": (S3Resource(config), MountMode.WRITE)},
+                         mode=MountMode.WRITE)
+    with tempfile.NamedTemporaryFile(suffix=".tar", delete=False) as f:
+        drift_snap = f.name
+    try:
+        await drift_ws.execute(f'echo "original" | tee {probe}')
+        await drift_ws.execute(f"cat {probe}")
+        s = await drift_ws.stat(probe)
+        print(f"  wrote {probe}")
+        print(f"  fingerprint={s.fingerprint}")
+        print(f"  revision   ={s.revision} "
+              f"({'versioning on' if s.revision else 'no versioning'})")
+
+        await drift_ws.snapshot(drift_snap)
+        snap_size = os.path.getsize(drift_snap)
+        print(f"  snapshot: {drift_snap} ({snap_size} bytes)")
+
+        await drift_ws.execute(f'echo "mutated" | tee {probe}')
+        s2 = await drift_ws.stat(probe)
+        print(f"  mutated on bucket: new revision={s2.revision}")
+
+        loaded = Workspace.load(drift_snap,
+                                resources={"/s3/": S3Resource(config)})
+        loaded._cache.evict_paths([probe])
+        try:
+            r = await loaded.execute(f"cat {probe}")
+            served = (await r.stdout_str()).strip()
+            pinned_ok = s.revision is not None and served == "original"
+            label = ("OK pin served original" if pinned_ok else
+                     "no pin (bucket not versioned?), live fingerprint matched"
+                     if served == "original" else "UNEXPECTED")
+            print(f"  STRICT load → served: {served!r} ({label})")
+        except ContentDriftError as e:
+            print(f"  STRICT load raised ContentDriftError as expected: "
+                  f"{e.path}")
+    finally:
+        try:
+            await drift_ws.execute(f"rm {probe}")
+        except Exception:
+            pass
+        if os.path.exists(drift_snap):
+            os.unlink(drift_snap)
 
 
 asyncio.run(main())

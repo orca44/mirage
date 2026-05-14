@@ -21,7 +21,7 @@ from mirage.workspace.snapshot.utils import norm_mount_prefix
 
 async def _to_state(ws: Workspace) -> dict:
     from mirage.workspace.snapshot import to_state_dict
-    return to_state_dict(ws)
+    return await to_state_dict(ws)
 
 
 def _build_override_resources(override: dict[str, Any] | None) -> dict:

@@ -53,7 +53,7 @@ def test_save_load_ram_round_trip(tmp_path):
                     mode=MountMode.WRITE)
     _seed(src)
     snap = tmp_path / "ram.tar"
-    src.snapshot(snap)
+    asyncio.run(src.snapshot(snap))
     assert snap.exists() and snap.stat().st_size > 0
 
     dst = Workspace.load(snap)
@@ -66,7 +66,7 @@ def test_save_load_ram_compressed_gz(tmp_path):
                     mode=MountMode.WRITE)
     _seed(src)
     snap = tmp_path / "ram.tar.gz"
-    src.snapshot(snap, compress="gz")
+    asyncio.run(src.snapshot(snap, compress="gz"))
 
     dst = Workspace.load(snap)
     assert _read(dst, "/m/a.txt") == "hello\n"
@@ -83,7 +83,7 @@ def test_save_load_disk_round_trip(tmp_path):
         mode=MountMode.WRITE)
     _seed(src)
     snap = tmp_path / "disk.tar"
-    src.snapshot(snap)
+    asyncio.run(src.snapshot(snap))
 
     dst = Workspace.load(snap)
     assert _read(dst, "/m/a.txt") == "hello\n"
@@ -98,7 +98,7 @@ def test_save_load_disk_with_override_root(tmp_path):
         mode=MountMode.WRITE)
     _seed(src)
     snap = tmp_path / "disk.tar"
-    src.snapshot(snap)
+    asyncio.run(src.snapshot(snap))
 
     dst_root = tmp_path / "dst"
     dst_root.mkdir()
@@ -120,7 +120,7 @@ def test_needs_override_missing_raises(tmp_path):
     src = Workspace({"/s3": (S3Resource(cfg), MountMode.WRITE)},
                     mode=MountMode.WRITE)
     snap = tmp_path / "s3.tar"
-    src.snapshot(snap)
+    asyncio.run(src.snapshot(snap))
 
     with pytest.raises(ValueError, match=r"resources="):
         Workspace.load(snap)
@@ -143,7 +143,7 @@ def test_needs_override_lists_all_missing(tmp_path):
         },
         mode=MountMode.WRITE)
     snap = tmp_path / "two-s3.tar"
-    src.snapshot(snap)
+    asyncio.run(src.snapshot(snap))
 
     with pytest.raises(ValueError) as ei:
         Workspace.load(snap)
@@ -163,7 +163,7 @@ def test_no_real_creds_in_tar_bytes(tmp_path):
     src = Workspace({"/s3": (S3Resource(cfg), MountMode.WRITE)},
                     mode=MountMode.WRITE)
     snap = tmp_path / "s3.tar"
-    src.snapshot(snap)
+    asyncio.run(src.snapshot(snap))
 
     raw = snap.read_bytes()
     assert b"AKIA-OBVIOUS-LEAK" not in raw
@@ -179,7 +179,7 @@ def test_manifest_is_valid_json(tmp_path):
                     mode=MountMode.WRITE)
     _seed(src)
     snap = tmp_path / "snap.tar"
-    src.snapshot(snap)
+    asyncio.run(src.snapshot(snap))
 
     with tarfile.open(snap, "r") as tar:
         f = tar.extractfile("manifest.json")
@@ -197,7 +197,7 @@ def test_disk_files_extractable_from_tar(tmp_path):
         mode=MountMode.WRITE)
     _seed(src)
     snap = tmp_path / "disk.tar"
-    src.snapshot(snap)
+    asyncio.run(src.snapshot(snap))
 
     extract = tmp_path / "extract"
     extract.mkdir()
@@ -273,7 +273,7 @@ def test_workspace_copy_independence_ram():
                     mode=MountMode.WRITE)
     asyncio.run(src.execute("echo hi > /m/a.txt"))
 
-    cp = src.copy()
+    cp = asyncio.run(src.copy())
     asyncio.run(cp.execute("echo bye > /m/a.txt"))
 
     assert _read(src, "/m/a.txt") == "hi\n"
@@ -284,7 +284,7 @@ def test_workspace_copy_preserves_max_drain_bytes():
     src = Workspace({"/m": (RAMResource(), MountMode.WRITE)},
                     mode=MountMode.WRITE)
     src.max_drain_bytes = 1234
-    cp = src.copy()
+    cp = asyncio.run(src.copy())
     assert cp.max_drain_bytes == 1234
 
 
@@ -294,7 +294,7 @@ def test_workspace_copy_preserves_max_drain_bytes():
 def test_to_state_dict_shape():
     ws = Workspace({"/m": (RAMResource(), MountMode.WRITE)},
                    mode=MountMode.WRITE)
-    state = to_state_dict(ws)
+    state = asyncio.run(to_state_dict(ws))
     assert state["version"] == 2
     assert "mirage_version" in state
     assert isinstance(state["mounts"], list)
@@ -305,7 +305,7 @@ def test_to_state_dict_shape():
 def test_snapshot_round_trip_no_sync_policy(tmp_path):
     ws = Workspace({"/data": RAMResource()})
     target = tmp_path / "snap.tar"
-    ws.snapshot(str(target))
+    asyncio.run(ws.snapshot(str(target)))
     restored = Workspace.load(str(target))
     assert restored is not None
 
@@ -324,7 +324,7 @@ def test_ram_round_trip_filenames_with_spaces(tmp_path):
         "你好".encode())
 
     snap = tmp_path / "spaces.tar"
-    src.snapshot(snap)
+    asyncio.run(src.snapshot(snap))
     dst = Workspace.load(snap)
 
     files = dst._registry.mount_for("/m/").resource._store.files
@@ -345,7 +345,7 @@ def test_disk_round_trip_filenames_with_spaces(tmp_path):
         {"/m": (DiskResource(root=str(src_root)), MountMode.WRITE)},
         mode=MountMode.WRITE)
     snap = tmp_path / "disk-spaces.tar"
-    src.snapshot(snap)
+    asyncio.run(src.snapshot(snap))
 
     dst_root = tmp_path / "dst"
     dst_root.mkdir()
@@ -397,7 +397,7 @@ def test_redis_round_trip_filenames_with_spaces(tmp_path):
         },
         mode=MountMode.WRITE)
     snap = tmp_path / "redis-spaces.tar"
-    src.snapshot(snap)
+    asyncio.run(src.snapshot(snap))
 
     dst_resource = RedisResource(url=redis_url, key_prefix=dst_prefix)
     Workspace.load(snap, resources={"/m": dst_resource})

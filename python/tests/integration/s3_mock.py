@@ -116,22 +116,48 @@ class _MultiBucketPaginator:
 
 class MultiBucketS3Client:
 
-    def __init__(self, buckets: dict[str, dict[str, bytes]]) -> None:
+    def __init__(self,
+                 buckets: dict[str, dict[str, bytes]],
+                 versioned: set[str] | None = None) -> None:
         self.buckets = buckets
+        self.versioned = versioned or set()
+        self._versions: dict[tuple[str, str], list[tuple[str, bytes]]] = {}
 
     def _objects(self, bucket: str) -> dict[str, bytes]:
         if bucket not in self.buckets:
             self.buckets[bucket] = {}
         return self.buckets[bucket]
 
+    def _track(self, bucket: str, key: str) -> str | None:
+        if bucket not in self.versioned:
+            return None
+        current = self.buckets.get(bucket, {}).get(key)
+        if current is None:
+            return None
+        history = self._versions.setdefault((bucket, key), [])
+        if not history or history[-1][1] != current:
+            vid = f"v{len(history) + 1}-{hashlib.md5(current).hexdigest()[:8]}"
+            history.append((vid, current))
+        return history[-1][0]
+
     async def get_object(self,
                          Bucket: str,
                          Key: str,
-                         Range: str | None = None) -> dict:
-        objects = self._objects(Bucket)
-        if Key not in objects:
-            raise _mock_s3_error("NoSuchKey")
-        data = objects[Key]
+                         Range: str | None = None,
+                         VersionId: str | None = None) -> dict:
+        self._track(Bucket, Key)
+        if VersionId is not None:
+            history = self._versions.get((Bucket, Key), [])
+            for vid, data in history:
+                if vid == VersionId:
+                    break
+            else:
+                raise _mock_s3_error("NoSuchVersion")
+        else:
+            objects = self._objects(Bucket)
+            if Key not in objects:
+                raise _mock_s3_error("NoSuchKey")
+            data = objects[Key]
         if Range is not None:
             data = _slice_range(data, Range)
         return {"Body": _AsyncMockBody(data)}
@@ -142,11 +168,15 @@ class MultiBucketS3Client:
             raise _mock_s3_error("NoSuchKey")
         data = objects[Key]
         etag = hashlib.md5(data).hexdigest()
-        return {
+        vid = self._track(Bucket, Key)
+        resp: dict = {
             "ContentLength": len(data),
             "LastModified": LAST_MODIFIED,
             "ETag": f'"{etag}"',
         }
+        if vid is not None:
+            resp["VersionId"] = vid
+        return resp
 
     def get_paginator(self, name: str):
         assert name == "list_objects_v2"
@@ -192,15 +222,18 @@ class MultiBucketS3Client:
 
 class MultiBucketSession:
 
-    def __init__(self, buckets: dict[str, dict[str, bytes]]) -> None:
-        self._client = MultiBucketS3Client(buckets)
+    def __init__(self,
+                 buckets: dict[str, dict[str, bytes]],
+                 versioned: set[str] | None = None) -> None:
+        self._client = MultiBucketS3Client(buckets, versioned=versioned)
 
     def client(self, **kwargs):
         return self._client
 
 
-def patch_s3_multi(buckets: dict[str, dict[str, bytes]]) -> ExitStack:
-    session = MultiBucketSession(buckets)
+def patch_s3_multi(buckets: dict[str, dict[str, bytes]],
+                   versioned: set[str] | None = None) -> ExitStack:
+    session = MultiBucketSession(buckets, versioned=versioned)
     stack = ExitStack()
     for mod in _CORE_MODULES:
         stack.enter_context(patch(f"{mod}.async_session",

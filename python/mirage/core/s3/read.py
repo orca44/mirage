@@ -38,6 +38,7 @@ async def read_bytes(accessor: S3Accessor,
     """
     if isinstance(path, str):
         path = PathSpec(original=path, directory=path)
+    virtual = path.original if isinstance(path, PathSpec) else path
     if isinstance(path, PathSpec):
         prefix = path.prefix
         path = path.original
@@ -46,6 +47,9 @@ async def read_bytes(accessor: S3Accessor,
     config = accessor.config
     key = _key(path)
     kwargs = {"Bucket": config.bucket, "Key": key}
+    pin = accessor.revision_pins.get(virtual)
+    if pin:
+        kwargs["VersionId"] = pin
     if offset or size is not None:
         end = (offset + size - 1) if size is not None else ""
         kwargs["Range"] = f"bytes={offset}-{end}"

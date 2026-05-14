@@ -21,7 +21,7 @@ from mirage.accessor.base import Accessor
 from mirage.cache.index import IndexCacheStore
 from mirage.commands.resolve import COMPOUND_EXTENSIONS
 from mirage.observe import OpRecord
-from mirage.observe.context import set_virtual_prefix
+from mirage.observe.context import push_mount_prefix
 from mirage.ops.config import OpsMount
 from mirage.ops.registry import OpsRegistry, RegisteredOp
 from mirage.runtime import assert_mount_allowed
@@ -137,7 +137,7 @@ class Ops:
         assert_mount_allowed(mount_prefix)
         if write and mode == MountMode.READ:
             raise PermissionError(f"mount at {path!r} is read-only")
-        set_virtual_prefix(mount_prefix)
+        prev_prefix = push_mount_prefix(mount_prefix)
         filetype = self._get_filetype(rel_path)
         scope = PathSpec(
             original=path,
@@ -154,7 +154,7 @@ class Ops:
                                                index=index,
                                                **kwargs)
         finally:
-            set_virtual_prefix("")
+            push_mount_prefix(prev_prefix)
         if isinstance(result, (bytes, bytearray)):
             nbytes = len(result)
         else:

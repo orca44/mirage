@@ -102,7 +102,7 @@ class MirageSandboxSession(BaseSandboxSession):
 
     async def persist_workspace(self) -> io.IOBase:
         buf = io.BytesIO()
-        self._ws.snapshot(buf)
+        await self._ws.snapshot(buf)
         buf.seek(0)
         return buf
 

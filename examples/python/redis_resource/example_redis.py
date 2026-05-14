@@ -202,7 +202,7 @@ async def main() -> None:
         snap = f.name
     dst_prefix = f"mirage:loaded:{uuid.uuid4().hex[:8]}:"
     try:
-        ws.snapshot(snap)
+        await ws.snapshot(snap)
         print(f"  saved → {snap} ({os.path.getsize(snap)} bytes)")
 
         try:
@@ -223,18 +223,18 @@ async def main() -> None:
         print(f"  loaded ws ls /data: "
               f"{(await r.stdout_str()).strip()[:60]}…")
 
-        # copy(): in-process — reuses same RedisResource, both copies
+        # copy(): in-process, reuses same RedisResource, both copies
         # see the same Redis state
-        cp = ws.copy()
+        cp = await ws.copy()
         print(f"  copy() mounts: {[m.prefix for m in cp.mounts()]}")
 
-        deep = _copy.deepcopy(ws)
-        print(f"  deepcopy() mounts: {[m.prefix for m in deep.mounts()]}")
-
-        try:
-            _copy.copy(ws)
-        except NotImplementedError as e:
-            print(f"  ✓ shallow copy raises: {str(e)[:60]}…")
+        for op_name, op in (("deepcopy", _copy.deepcopy), ("shallow copy",
+                                                           _copy.copy)):
+            try:
+                op(ws)
+                print(f"  ✗ {op_name} should have raised")
+            except NotImplementedError as e:
+                print(f"  ✓ {op_name} raises: {str(e)[:60]}…")
     finally:
         os.unlink(snap)
         # Cleanup loaded keys

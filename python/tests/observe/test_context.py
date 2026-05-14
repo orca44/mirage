@@ -12,8 +12,8 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.observe.context import (record, set_virtual_prefix,
-                                    start_recording, stop_recording)
+from mirage.observe.context import (push_mount_prefix, record, start_recording,
+                                    stop_recording)
 
 
 def test_record_no_context():
@@ -49,11 +49,12 @@ def test_multiple_records():
 
 def test_record_with_virtual_prefix():
     records = start_recording()
-    set_virtual_prefix("/s3")
+    push_mount_prefix("/s3")
     record("read", "/data/file.json", "s3", 100, 0)
-    set_virtual_prefix("")
+    push_mount_prefix("")
     stop_recording()
     assert records[0].path == "/s3/data/file.json"
+    assert records[0].mount_prefix == "/s3"
 
 
 def test_record_without_prefix():
@@ -61,12 +62,25 @@ def test_record_without_prefix():
     record("read", "/data/file.json", "s3", 100, 0)
     stop_recording()
     assert records[0].path == "/data/file.json"
+    assert records[0].mount_prefix == ""
 
 
 def test_record_prefix_already_applied():
     records = start_recording()
-    set_virtual_prefix("/s3")
+    push_mount_prefix("/s3")
     record("read", "/s3/data/file.json", "s3", 100, 0)
-    set_virtual_prefix("")
+    push_mount_prefix("")
     stop_recording()
     assert records[0].path == "/s3/data/file.json"
+
+
+def test_push_mount_prefix_returns_previous():
+    start_recording()
+    assert push_mount_prefix("/s3") == ""
+    assert push_mount_prefix("/r2") == "/s3"
+    push_mount_prefix("")
+    stop_recording()
+
+
+def test_push_mount_prefix_no_recorder_is_noop():
+    assert push_mount_prefix("/s3") == ""

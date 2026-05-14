@@ -49,7 +49,7 @@ def test_workspace_save_then_load_classmethod(tmp_path):
     asyncio.run(src.execute("echo hi > /m/a.txt"))
 
     snap = tmp_path / "ws.tar"
-    src.snapshot(snap)
+    asyncio.run(src.snapshot(snap))
     assert snap.exists() and snap.stat().st_size > 0
 
     dst = Workspace.load(snap)
@@ -62,7 +62,7 @@ def test_workspace_save_compressed(tmp_path):
     asyncio.run(src.execute("echo hi > /m/a.txt"))
 
     snap = tmp_path / "ws.tar.gz"
-    src.snapshot(snap, compress="gz")
+    asyncio.run(src.snapshot(snap, compress="gz"))
     dst = Workspace.load(snap)
     assert _read(dst, "/m/a.txt") == "hi\n"
 
@@ -76,7 +76,7 @@ def test_workspace_load_with_disk_override(tmp_path):
         mode=MountMode.WRITE)
 
     snap = tmp_path / "ws.tar"
-    src.snapshot(snap)
+    asyncio.run(src.snapshot(snap))
 
     dst_root = tmp_path / "dst"
     dst_root.mkdir()
@@ -94,7 +94,7 @@ def test_workspace_copy_method_independence_ram():
                     mode=MountMode.WRITE)
     asyncio.run(src.execute("echo hi > /m/a.txt"))
 
-    cp = src.copy()
+    cp = asyncio.run(src.copy())
     asyncio.run(cp.execute("echo bye > /m/a.txt"))
 
     assert _read(src, "/m/a.txt") == "hi\n"
@@ -109,7 +109,7 @@ def test_deepcopy_via_stdlib():
                     mode=MountMode.WRITE)
     asyncio.run(src.execute("echo hi > /m/a.txt"))
 
-    cp = _copy.deepcopy(src)
+    cp = asyncio.run((src).copy())
     asyncio.run(cp.execute("echo bye > /m/a.txt"))
 
     assert _read(src, "/m/a.txt") == "hi\n"
@@ -133,7 +133,6 @@ def test_shallow_copy_error_mentions_alternatives():
         _copy.copy(src)
     msg = str(exc_info.value)
     assert "ws.copy()" in msg
-    assert "deepcopy" in msg
 
 
 # ── max_drain_bytes preserved across save/load ───────────────────
@@ -145,7 +144,7 @@ def test_save_load_preserves_max_drain_bytes(tmp_path):
     src.max_drain_bytes = 1234
 
     snap = tmp_path / "ws.tar"
-    src.snapshot(snap)
+    asyncio.run(src.snapshot(snap))
 
     dst = Workspace.load(snap)
     assert dst.max_drain_bytes == 1234
@@ -164,7 +163,7 @@ def test_history_round_trip(tmp_path):
     assert len(expected_commands) == 3
 
     snap = tmp_path / "ws.tar"
-    src.snapshot(snap)
+    asyncio.run(src.snapshot(snap))
     dst = Workspace.load(snap)
 
     got_commands = [e.command for e in dst.history.entries()]
@@ -191,7 +190,7 @@ def test_finished_jobs_survive(tmp_path):
     src.job_table._jobs[1] = finished
 
     snap = tmp_path / "ws.tar"
-    src.snapshot(snap)
+    asyncio.run(src.snapshot(snap))
     dst = Workspace.load(snap)
 
     job_ids = {j.id for j in dst.job_table.list_jobs()}
@@ -221,7 +220,7 @@ def test_copy_shares_redis_backend():
     sc.set(f"{prefix}file:/seed.txt", b"shared")
     sc.close()
 
-    cp = src.copy()
+    cp = asyncio.run(src.copy())
     asyncio.run(cp.execute("echo new > /r/added.txt"))
 
     sc = sync_redis.Redis.from_url(REDIS_URL)
@@ -243,7 +242,7 @@ def test_copy_independence_of_cache():
                     mode=MountMode.WRITE)
     asyncio.run(src._cache.set("/m/a.txt", b"src-cached"))
 
-    cp = src.copy()
+    cp = asyncio.run(src.copy())
     asyncio.run(cp._cache.set("/m/a.txt", b"cp-cached"))
 
     src_cached = asyncio.run(src._cache.get("/m/a.txt"))
@@ -270,7 +269,7 @@ def test_workspace_save_load_s3_mounted(tmp_path):
         src = Workspace({"/s3": (S3Resource(cfg_src), MountMode.WRITE)},
                         mode=MountMode.WRITE)
         snap = tmp_path / "ws.tar"
-        src.snapshot(snap)
+        asyncio.run(src.snapshot(snap))
 
         # Saved tar must not contain old creds
         raw = snap.read_bytes()
@@ -302,7 +301,7 @@ def test_override_drops_saved_index(tmp_path):
                         mode=MountMode.WRITE)
 
         snap = tmp_path / "ws.tar"
-        src.snapshot(snap)
+        asyncio.run(src.snapshot(snap))
 
         fresh = S3Resource(cfg)
         dst = Workspace.load(snap, resources={"/s3": fresh})

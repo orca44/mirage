@@ -21,6 +21,8 @@ from mirage.types import (CacheKey, ConsistencyPolicy, JobKey, MountKey,
                           MountMode, NodeKey, RecordKey, ResourceName,
                           ResourceStateKey, SessionKey, StateKey)
 from mirage.workspace.snapshot.config import MountArgs
+from mirage.workspace.snapshot.drift import (capture_fingerprints,
+                                             live_only_mount_prefixes)
 from mirage.workspace.snapshot.utils import FORMAT_VERSION, norm_mount_prefix
 from mirage.workspace.types import ExecutionNode, ExecutionRecord
 
@@ -32,7 +34,7 @@ def _mirage_version() -> str:
         return "unknown"
 
 
-def to_state_dict(ws) -> dict:
+async def to_state_dict(ws) -> dict:
     auto_prefixes = {"/dev/"}
     if ws.observer is not None:
         auto_prefixes.add(norm_mount_prefix(ws.observer.prefix))
@@ -68,6 +70,9 @@ def to_state_dict(ws) -> dict:
         if j.status != JobStatus.RUNNING
     ]
 
+    fingerprints = await capture_fingerprints(ws)
+    live_only_mounts = live_only_mount_prefixes(ws)
+
     return {
         StateKey.VERSION: FORMAT_VERSION,
         StateKey.MIRAGE_VERSION: _mirage_version(),
@@ -83,6 +88,8 @@ def to_state_dict(ws) -> dict:
         },
         StateKey.HISTORY: history_records,
         StateKey.JOBS: finished_jobs,
+        StateKey.FINGERPRINTS: fingerprints,
+        StateKey.LIVE_ONLY_MOUNTS: live_only_mounts,
     }
 
 

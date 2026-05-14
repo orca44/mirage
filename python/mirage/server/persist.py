@@ -100,7 +100,7 @@ async def snapshot_all(registry: WorkspaceRegistry, persist_dir: Path) -> int:
 
 
 async def _save_to_path(ws: Workspace, target: Path) -> None:
-    ws.snapshot(str(target))
+    await ws.snapshot(str(target))
 
 
 def restore_all(registry: WorkspaceRegistry,

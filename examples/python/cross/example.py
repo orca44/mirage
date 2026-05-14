@@ -113,7 +113,7 @@ async def main():
 
     # ── snapshot the workspace + expected outputs ──────────────────
     os.makedirs(SNAPSHOT_DIR, exist_ok=True)
-    ws.snapshot(SNAPSHOT_TAR)
+    await ws.snapshot(SNAPSHOT_TAR)
     with open(EXPECTED_JSON, "w") as f:
         json.dump(
             {

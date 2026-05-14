@@ -12,7 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -21,11 +21,15 @@ class OpRecord:
 
     Args:
         op (str): Operation type ("read", "write", "stat", "readdir", etc.).
-        path (str): Virtual path.
+        path (str): Virtual path (mount_prefix + rel_path).
         source (str): Resource name ("s3", "ram", "disk").
         bytes (int): Bytes transferred (0 for metadata ops).
         timestamp (int): UTC epoch milliseconds.
         duration_ms (int): Wall-clock duration.
+        mount_prefix (str): The mount prefix this op was served through
+            (e.g. "/s3"). Empty when recorded outside any mount frame.
+            Stored explicitly so consumers don't have to re-derive it
+            from the virtual path.
     """
 
     op: str
@@ -34,8 +38,16 @@ class OpRecord:
     bytes: int
     timestamp: int
     duration_ms: int
+    mount_prefix: str = field(default="")
 
     @property
     def is_cache(self) -> bool:
         """Whether this op was served from the in-memory cache."""
         return self.source == "ram"
+
+    @property
+    def rel_path(self) -> str:
+        """Path relative to the mount root (strips mount_prefix)."""
+        if self.mount_prefix and self.path.startswith(self.mount_prefix):
+            return self.path[len(self.mount_prefix):] or "/"
+        return self.path

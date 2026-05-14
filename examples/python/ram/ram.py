@@ -179,14 +179,14 @@ async def main() -> None:
     with tempfile.NamedTemporaryFile(suffix=".tar", delete=False) as f:
         snap = f.name
     try:
-        ws.snapshot(snap)
+        await ws.snapshot(snap)
         print(f"  saved → {snap} ({os.path.getsize(snap)} bytes)")
 
         loaded = Workspace.load(snap)
         r = await loaded.execute("cat /data/hello.txt")
         print(f"  loaded ws cat: {(await r.stdout_str()).strip()!r}")
 
-        cp = ws.copy()
+        cp = await ws.copy()
         await cp.execute('echo "mutated" | tee /data/hello.txt')
         r_orig = await ws.execute("cat /data/hello.txt")
         r_cp = await cp.execute("cat /data/hello.txt")
@@ -194,14 +194,13 @@ async def main() -> None:
         print(f"  copy:      {(await r_cp.stdout_str()).strip()!r}  "
               "(local backend → independent)")
 
-        deep = _copy.deepcopy(ws)
-        print(f"  deepcopy mounts: {[m.prefix for m in deep.mounts()]}")
-
-        try:
-            _copy.copy(ws)
-            print("  ✗ shallow copy should have raised")
-        except NotImplementedError as e:
-            print(f"  ✓ shallow copy raises: {str(e)[:60]}…")
+        for op_name, op in (("deepcopy", _copy.deepcopy), ("shallow copy",
+                                                           _copy.copy)):
+            try:
+                op(ws)
+                print(f"  ✗ {op_name} should have raised")
+            except NotImplementedError as e:
+                print(f"  ✓ {op_name} raises: {str(e)[:60]}…")
     finally:
         os.unlink(snap)
 

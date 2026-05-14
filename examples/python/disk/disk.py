@@ -118,7 +118,7 @@ async def main() -> None:
         snap = f.name
     custom_root = tempfile.mkdtemp(prefix="mirage-disk-restore-")
     try:
-        ws.snapshot(snap)
+        await ws.snapshot(snap)
         print(f"  saved → {snap} ({os.path.getsize(snap)} bytes)")
 
         # Load with default fresh tmpdir
@@ -135,17 +135,16 @@ async def main() -> None:
               f"{(await r.stdout_str()).strip()[:80]}…")
         print(f"  custom_root contents: {sorted(os.listdir(custom_root))[:5]}")
 
-        cp = ws.copy()
+        cp = await ws.copy()
         print(f"  copy() mounts: {[m.prefix for m in cp.mounts()]}")
 
-        deep = _copy.deepcopy(ws)
-        print(f"  deepcopy() mounts: {[m.prefix for m in deep.mounts()]}")
-
-        try:
-            _copy.copy(ws)
-            print("  ✗ shallow copy should have raised")
-        except NotImplementedError as e:
-            print(f"  ✓ shallow copy raises: {str(e)[:60]}…")
+        for op_name, op in (("deepcopy", _copy.deepcopy), ("shallow copy",
+                                                           _copy.copy)):
+            try:
+                op(ws)
+                print(f"  ✗ {op_name} should have raised")
+            except NotImplementedError as e:
+                print(f"  ✓ {op_name} raises: {str(e)[:60]}…")
     finally:
         os.unlink(snap)
         shutil.rmtree(custom_root, ignore_errors=True)

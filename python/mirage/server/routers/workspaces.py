@@ -116,7 +116,7 @@ async def snapshot_workspace(workspace_id: str, request: Request) -> Response:
 
 
 async def _run_snapshot(ws: Workspace, buf: io.BytesIO) -> None:
-    ws.snapshot(buf)
+    await ws.snapshot(buf)
 
 
 @router.post("/load", response_model=WorkspaceDetail, status_code=201)

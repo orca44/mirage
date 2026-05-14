@@ -20,10 +20,48 @@ from mirage.commands.config import RegisteredCommand
 from mirage.commands.resolve import get_extension
 from mirage.commands.spec import CommandSpec
 from mirage.io.types import ByteSource, IOResult
-from mirage.observe.context import set_virtual_prefix
+from mirage.observe.context import push_mount_prefix, with_mount_prefix
 from mirage.ops.registry import RegisteredOp
 from mirage.resource.base import BaseResource
 from mirage.types import ConsistencyPolicy, MountMode, PathSpec
+
+
+def _wrap_cmd_streams(
+    result: tuple[ByteSource | None, IOResult],
+    mount_prefix: str,
+) -> tuple[ByteSource | None, IOResult]:
+    """Wrap any async-iterator streams in ``result`` with the mount
+    prefix, so ``record_stream`` calls inside the lazy backend body
+    see the correct prefix when consumed after this frame exits.
+
+    Mirrors the ``exit_on_empty`` pattern: thin async-gen wrapper that
+    side-effects the recorder state as bytes flow through. Same object
+    appearing in both the primary stream and IOResult.reads/writes is
+    wrapped once (dedup by identity).
+
+    Args:
+        result: ``(stream, io)`` as returned by a command handler.
+        mount_prefix: prefix to push during stream consumption.
+    """
+    stream, io = result
+    seen: dict[int, ByteSource] = {}
+
+    def _wrap(obj: ByteSource | None) -> ByteSource | None:
+        if obj is None or isinstance(obj, (bytes, bytearray)):
+            return obj
+        oid = id(obj)
+        if oid in seen:
+            return seen[oid]
+        wrapped = with_mount_prefix(mount_prefix, obj)
+        seen[oid] = wrapped
+        return wrapped
+
+    stream = _wrap(stream)
+    for k, v in list(io.reads.items()):
+        io.reads[k] = _wrap(v)
+    for k, v in list(io.writes.items()):
+        io.writes[k] = _wrap(v)
+    return stream, io
 
 
 class Mount:
@@ -377,7 +415,7 @@ class Mount:
         if session_id is not None:
             kw["session_id"] = session_id
 
-        set_virtual_prefix(mount_prefix)
+        prev_prefix = push_mount_prefix(mount_prefix)
         try:
             for cmd in handlers:
                 if cmd.write and self.mode == MountMode.READ:
@@ -388,10 +426,10 @@ class Mount:
                 result = await cmd.fn(self.resource.accessor, paths, *texts,
                                       **kw)
                 if result is not None:
-                    return result
+                    return _wrap_cmd_streams(result, mount_prefix)
             return None, IOResult()
         finally:
-            set_virtual_prefix("")
+            push_mount_prefix(prev_prefix)
 
     async def execute_op(
         self,
@@ -426,10 +464,14 @@ class Mount:
             prefix=mount_prefix,
         )
         kwargs.setdefault("index", self.resource.index)
-        for op in levels:
-            result = op.fn(self.resource.accessor, scope, *args, **kwargs)
-            if inspect.isawaitable(result):
-                result = await result
-            if result is not None:
-                return result
-        return None
+        prev_prefix = push_mount_prefix(mount_prefix)
+        try:
+            for op in levels:
+                result = op.fn(self.resource.accessor, scope, *args, **kwargs)
+                if inspect.isawaitable(result):
+                    result = await result
+                if result is not None:
+                    return result
+            return None
+        finally:
+            push_mount_prefix(prev_prefix)

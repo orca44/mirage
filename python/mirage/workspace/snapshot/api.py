@@ -17,8 +17,13 @@ from mirage.workspace.snapshot.state import to_state_dict
 from mirage.workspace.snapshot.tar_io import write_tar
 
 
-def snapshot(ws, target, *, compress: str | None = None) -> None:
+async def snapshot(ws, target, *, compress: str | None = None) -> None:
     """Serialize a Workspace to a tar archive.
+
+    Async because fingerprint capture for SUPPORTS_SNAPSHOT mounts calls
+    each touched path's stat() to lock in the version markers (S3 ETag,
+    etc.) the agent saw. Without this, replay cannot detect upstream
+    drift.
 
     Workspace.load and Workspace.copy own the inverse direction
     (construction). Snapshot does not construct Workspace — that
@@ -30,6 +35,6 @@ def snapshot(ws, target, *, compress: str | None = None) -> None:
             object (BytesIO, etc.).
         compress: None | "gz" | "bz2" | "xz".
     """
-    state = to_state_dict(ws)
+    state = await to_state_dict(ws)
     manifest, blobs = split_manifest_and_blobs(state)
     write_tar(target, manifest, blobs, compress=compress)
